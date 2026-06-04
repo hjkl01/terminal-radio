@@ -15,8 +15,11 @@ help:
 
 .PHONY: help build run test clippy clean install fmt check
 
+BINARY_NAME := terminal-radio
+
 build:
 	cargo build
+	cp target/debug/$(BINARY_NAME) ./$(BINARY_NAME)
 
 run:
 	cargo run
@@ -34,12 +37,14 @@ check: fmt clippy test
 
 clean:
 	cargo clean
+	 rm -f ./$(BINARY_NAME)
 
 install:
 	cargo install --path .
 
 release:
 	cargo build --release
+	cp target/release/$(BINARY_NAME) ./$(BINARY_NAME)
 
 watch:
 	cargo watch -x run
