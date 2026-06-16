@@ -8,7 +8,9 @@
     <application
         android:name=".RadioApplication"
         android:allowBackup="true"
+        android:icon="@drawable/ic_radio_large"
         android:label="Terminal Radio"
+        android:roundIcon="@drawable/ic_radio_large"
         android:theme="@style/Theme.TerminalRadio"
         android:usesCleartextTraffic="true">
 

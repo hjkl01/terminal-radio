@@ -1,0 +1,17 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- Signal waves -->
+    <path
+        android:fillColor="#1B5E20"
+        android:pathData="M24,4c-4.42,0-8,3.58-8,8h4c0-2.21,1.79-4,4-4s4,1.79,4,4-1.79,4-4,4v4c4.42,0 8-3.58 8-8s-3.58-8-8-8z"/>
+    <path
+        android:fillColor="#1B5E20"
+        android:pathData="M24,20c-6.63,0-12,5.37-12,12h4c0-4.42,3.58-8 8-8s8,3.58 8,8h4c0-6.63-5.37-12-12-12z"/>
+    <!-- Base -->
+    <path
+        android:fillColor="#1B5E20"
+        android:pathData="M18,36h12v8h-12z"/>
+</vector>

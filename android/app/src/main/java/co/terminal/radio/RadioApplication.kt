@@ -128,19 +128,19 @@ class RadioApplication : Application() {
         )
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_notification_play)
             .setContentTitle("Terminal Radio")
             .setContentText(isPlaying.takeIf { it }?.let { "Playing" } ?: "Paused")
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .addAction(android.R.drawable.ic_media_previous, "Previous", prevPendingIntent)
+            .addAction(R.drawable.ic_skip_previous, "Previous", prevPendingIntent)
             .addAction(
-                if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+                if (isPlaying) R.drawable.ic_notification_pause else R.drawable.ic_notification_play,
                 if (isPlaying) "Pause" else "Play",
                 pausePendingIntent
             )
-            .addAction(android.R.drawable.ic_media_next, "Next", nextPendingIntent)
+            .addAction(R.drawable.ic_skip_next, "Next", nextPendingIntent)
 
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.notify(NOTIFICATION_ID, builder.build())
