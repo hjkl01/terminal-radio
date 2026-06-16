@@ -3,7 +3,7 @@ FROM gradle:8.2-jdk17
 # Install Android SDK command-line tools
 ARG ANDROID_SDK_URL=https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
 ARG ANDROID_BUILD_TOOLS_VERSION=33.0.0
-ARG ANDROID_PLATFORM_VERSION=33
+ARG ANDROID_PLATFORM_VERSION=34
 
 # Step 1: Download and install Android command-line tools
 RUN mkdir -p /tmp/android-sdk && \
@@ -17,11 +17,16 @@ RUN mkdir -p /tmp/android-sdk && \
 ENV ANDROID_HOME=/opt/android-sdk
 ENV PATH=/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:${PATH}
 
-# Step 3: Verify sdkmanager is available
-RUN sdkmanager --version
-
-# Step 4: Accept licenses and install SDK components
+# Step 3: Accept licenses and install SDK components
 RUN yes | sdkmanager --licenses >/dev/null 2>&1 || true && \
     sdkmanager "platforms;android-${ANDROID_PLATFORM_VERSION}" "build-tools;${ANDROID_BUILD_TOOLS_VERSION}"
+
+# Step 4: Copy Gradle wrapper and generate cache
+COPY android/gradle/ /workspace/gradle/
+COPY android/gradlew /workspace/
+COPY android/gradle.properties /workspace/
+WORKDIR /workspace
+RUN chmod +x gradlew && \
+    ./gradlew --version >/dev/null 2>&1 || true
 
 WORKDIR /workspace/android
