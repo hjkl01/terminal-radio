@@ -11,6 +11,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import co.terminal.radio.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -19,6 +20,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var adapter: StationAdapter
     private var stations: List<Station> = emptyList()
+    private var currentStationUrl: String? = null
+    private var playingAnimationHandler: android.os.Handler? = null
+    private var playingAnimationRunnable: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,10 +42,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupRecyclerView() {
-        adapter = StationAdapter { station ->
+        adapter = StationAdapter({ station ->
             binding.tvTitle.text = station.name
-            playStation(station.url)
-        }
+        })
         binding.recyclerView.adapter = adapter
     }
 
@@ -87,7 +90,11 @@ class MainActivity : AppCompatActivity() {
         val app = application as RadioApplication
         try {
             app.playStation(url)
+            currentStationUrl = url
+            adapter.currentPlayingUrl = url
             updatePlayPauseButton(true)
+            showPlayingStatus(true)
+            startPlayingAnimation()
         } catch (e: Exception) {
             Toast.makeText(this, "播放失败: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -98,6 +105,33 @@ class MainActivity : AppCompatActivity() {
             if (isPlaying) R.drawable.ic_pause
             else R.drawable.ic_play
         )
+        showPlayingStatus(isPlaying)
+    }
+
+    private fun showPlayingStatus(isPlaying: Boolean) {
+        binding.tvStatus.text = if (isPlaying) "播放中" else "已暂停"
+        binding.tvStatus.visibility = View.VISIBLE
+        binding.ivPlayingIndicator.visibility = if (isPlaying) View.VISIBLE else View.GONE
+    }
+
+    private fun startPlayingAnimation() {
+        stopPlayingAnimation()
+        playingAnimationHandler = android.os.Handler(mainLooper)
+        playingAnimationRunnable = object : Runnable {
+            override fun run() {
+                val alpha = if (binding.ivPlayingIndicator.alpha == 1f) 0.3f else 1f
+                binding.ivPlayingIndicator.animate()
+                    .alpha(alpha)
+                    .setDuration(800)
+                    .start()
+                playingAnimationHandler?.postDelayed(this, 1000)
+            }
+        }
+        playingAnimationHandler?.postDelayed(playingAnimationRunnable!!, 0)
+    }
+
+    private fun stopPlayingAnimation() {
+        playingAnimationHandler?.removeCallbacksAndMessages(null)
     }
 
     override fun onResume() {
@@ -106,8 +140,14 @@ class MainActivity : AppCompatActivity() {
         updatePlayPauseButton(app.player.isPlaying)
     }
 
+    override fun onPause() {
+        super.onPause()
+        stopPlayingAnimation()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        stopPlayingAnimation()
         val app = application as RadioApplication
         app.stop()
     }
