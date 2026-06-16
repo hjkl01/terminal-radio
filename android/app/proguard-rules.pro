@@ -1,0 +1,3 @@
+ProGuard rules for Terminal Radio
+-dontwarn androidx.media3.**
+-keep class androidx.media3.** { *; }

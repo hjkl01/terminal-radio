@@ -2,49 +2,20 @@
 
 help:
 	@echo "Available targets:"
-	@echo "  build     - Build the project (debug)"
-	@echo "  run       - Build and run the project"
-	@echo "  test      - Run tests"
-	@echo "  clippy    - Run clippy lints"
-	@echo "  fmt       - Format code"
-	@echo "  check     - Run fmt, clippy, and test"
-	@echo "  clean     - Clean build artifacts"
-	@echo "  install   - Install locally"
-	@echo "  release   - Build release binary"
-	@echo "  watch     - Run with cargo-watch"
+	@echo "  docker    - Build Android APK via Docker"
+	@echo "  android   - Build Android APK (native Gradle)"
 
-.PHONY: help build run test clippy clean install fmt check
+.PHONY: help docker android
 
-BINARY_NAME := terminal-radio
+# Build Android APK using Docker with Gradle and Android SDK
+docker:
+	docker build -f Dockerfile.android -t terminal-radio-android .
+	docker run --rm \
+		--user "$(uid):$(gid)" \
+		-v $(shell pwd):/workspace \
+		terminal-radio-android \
+		./gradlew assembleDebug
+	cp $(shell pwd)/android/app/build/outputs/apk/debug/app-debug.apk ./
 
-build:
-	cargo build
-	cp target/debug/$(BINARY_NAME) ./$(BINARY_NAME)
-
-run:
-	cargo run
-
-test:
-	cargo test
-
-clippy:
-	cargo clippy
-
-fmt:
-	cargo fmt
-
-check: fmt clippy test
-
-clean:
-	cargo clean
-	 rm -f ./$(BINARY_NAME)
-
-install:
-	cargo install --path .
-
-release:
-	cargo build --release
-	cp target/release/$(BINARY_NAME) ./$(BINARY_NAME)
-
-watch:
-	cargo watch -x run
+android:
+	cd android && ./gradlew assembleDebug

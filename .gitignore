@@ -1,0 +1,43 @@
+# Build outputs
+*.apk
+*.aab
+*.apks
+
+# Android
+*.keystore
+.gradle/
+local.properties
+build/
+**/build/
+.cxx/
+*.iml
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Android SDK
+android/gradle/wrapper/gradle-wrapper.jar
+android/gradle/wrapper/gradle-wrapper.jar.md5
+
+# Logs
+*.log
+
+# Keystore
+*.jks
+*.p12
+
+# Temporary
+tmp/
+temp/
+*.tmp
