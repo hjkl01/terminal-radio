@@ -44,6 +44,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupRecyclerView() {
         adapter = StationAdapter({ station ->
             binding.tvTitle.text = station.name
+            playStation(station.url)
         })
         binding.recyclerView.adapter = adapter
     }
