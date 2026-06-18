@@ -43,17 +43,14 @@ class RadioApplication : Application() {
     }
 
     private fun setupPlayer() {
-        player = ExoPlayer.Builder(this).build().apply {
-            prepare()
-            playWhenReady = false
-        }
+        player = ExoPlayer.Builder(this).build()
     }
 
-    fun playStation(url: String) {
+    fun playStation(url: String, restart: Boolean = false) {
         val mediaItem = MediaItem.fromUri(url)
         player.setMediaItem(mediaItem)
         player.prepare()
-        player.play()
+        player.playWhenReady = true
         updateNotification(isPlaying = true)
     }
 
@@ -89,7 +86,6 @@ class RadioApplication : Application() {
     fun getCurrentStation(): Station? {
         val uri = player.currentMediaItem?.localConfiguration?.uri
         return uri?.toString()?.let { url ->
-            // Try to get name from current media item meta
             Station(player.currentMediaItem?.mediaMetadata?.title?.toString() ?: "", url)
         }
     }

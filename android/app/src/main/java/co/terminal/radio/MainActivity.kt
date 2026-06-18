@@ -11,7 +11,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import co.terminal.radio.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -75,23 +74,29 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            stations = M3uParser.loadFromAssets(content)
-            adapter.submitList(stations)
+            val parsedStations = withContext(Dispatchers.IO) {
+                M3uParser.loadFromAssets(content)
+            }
 
-            // Auto-play "音乐之声" or first station
-            val defaultStation = stations.indexOfFirst { it.name == "音乐之声" }
-                .takeIf { it >= 0 } ?: 0
-            val station = stations[defaultStation]
-            binding.tvTitle.text = station.name
-            playStation(station.url)
+            withContext(Dispatchers.Main) {
+                stations = parsedStations
+                adapter.submitList(stations)
+
+                // Auto-play "音乐之声" or first station
+                val defaultStation = stations.indexOfFirst { it.name == "音乐之声" }
+                    .takeIf { it >= 0 } ?: 0
+                val station = stations[defaultStation]
+                binding.tvTitle.text = station.name
+                playStation(station.url)
+            }
         }
     }
 
     private fun playStation(url: String) {
         val app = application as RadioApplication
         try {
-            app.playStation(url)
             currentStationUrl = url
+            app.playStation(url)
             adapter.currentPlayingUrl = url
             updatePlayPauseButton(true)
             showPlayingStatus(true)

@@ -21,12 +21,20 @@ ENV PATH=/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-too
 RUN yes | sdkmanager --licenses >/dev/null 2>&1 || true && \
     sdkmanager "platforms;android-${ANDROID_PLATFORM_VERSION}" "build-tools;${ANDROID_BUILD_TOOLS_VERSION}"
 
-# Step 4: Copy Gradle wrapper and generate cache
-COPY android/gradle/ /workspace/gradle/
-COPY android/gradlew /workspace/
-COPY android/gradle.properties /workspace/
-WORKDIR /workspace
-RUN chmod +x gradlew && \
-    ./gradlew --version >/dev/null 2>&1 || true
-
+# Step 4: Copy Gradle distribution and project files
+COPY gradle-8.2-bin.zip /opt/gradle-8.2-bin.zip
+COPY android/gradle/ /workspace/android/gradle/
+COPY android/gradlew /workspace/android/
+COPY android/gradle.properties /workspace/android/
+COPY android/app/ /workspace/android/app/
+COPY android/build.gradle.kts /workspace/android/build.gradle.kts
+COPY android/settings.gradle.kts /workspace/android/settings.gradle.kts
 WORKDIR /workspace/android
+
+# Step 5: Extract Gradle distribution to wrapper cache location
+RUN unzip -q /opt/gradle-8.2-bin.zip -d /opt/ && \
+    rm /opt/gradle-8.2-bin.zip && \
+    mkdir -p /root/.gradle/wrapper/dists/gradle-8.2-bin && \
+    mv /opt/gradle-8.2 /root/.gradle/wrapper/dists/gradle-8.2-bin && \
+    chmod +x gradlew && \
+    ./gradlew assembleDebug
