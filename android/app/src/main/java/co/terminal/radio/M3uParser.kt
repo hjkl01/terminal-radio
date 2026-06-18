@@ -1,14 +1,6 @@
 package co.terminal.radio
 
-import android.net.Uri
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-
-data class Station(val name: String, val url: String)
-
 object M3uParser {
-    private val gson = Gson()
-
     fun parse(rawContent: String): List<Station> {
         val stations = mutableListOf<Station>()
         var currentName: String? = null

@@ -4,6 +4,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:name=".RadioApplication"
@@ -23,14 +27,17 @@
             </intent-filter>
         </activity>
 
-        <receiver
-            android:name=".RadioReceiver"
-            android:exported="false">
+        <service
+            android:name=".RadioPlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
             <intent-filter>
-                <action android:name="action_play_pause" />
-                <action android:name="action_next" />
-                <action android:name="action_previous" />
+                <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
-        </receiver>
+        </service>
+
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
     </application>
 </manifest>

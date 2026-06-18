@@ -1,7 +1,7 @@
 <resources>
-    <style name="Theme.TerminalRadio" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/primary</item>
-        <item name="colorPrimaryVariant">@color/primary_dark</item>
-        <item name="colorOnPrimary">@color/white</item>
+    <style name="Theme.TerminalRadio" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:colorAccent">@color/primary</item>
     </style>
 </resources>
