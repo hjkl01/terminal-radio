@@ -159,6 +159,15 @@ class RadioPlayerManager(
     }
 
     private fun playStation(station: Station) {
+        if (station.url.isBlank()) {
+            _state.value = _state.value.copy(
+                status = PlaybackStatus.Error,
+                stationName = station.name,
+                currentUrl = "",
+                errorMessage = "未找到可播放的电台地址",
+            )
+            return
+        }
         if (!requestAudioFocus()) return
         val mediaItem = MediaItem.Builder()
             .setUri(station.url)
@@ -200,9 +209,7 @@ class RadioPlayerManager(
             while (isActive) {
                 delay(30_000L)
                 if (!player.isPlaying && !userPaused && !userStopped) {
-                    player.prepare()
-                    player.play()
-                    publishPlayerState()
+                    resumeCurrentStation()
                 }
             }
         }
@@ -224,7 +231,7 @@ class RadioPlayerManager(
             networkMonitor.isOnline.collect { isOnline ->
                 _state.value = _state.value.copy(isNetworkAvailable = isOnline)
                 if (isOnline && !userPaused && !userStopped && station != null && !player.isPlaying) {
-                    reconnect()
+                    resumeCurrentStation()
                 }
             }
         }
@@ -256,11 +263,31 @@ class RadioPlayerManager(
             while (isActive && !userPaused && !userStopped) {
                 delay(10_000L)
                 if (!player.isPlaying && requestAudioFocus()) {
-                    player.prepare()
-                    player.play()
+                    resumeCurrentStation()
                     break
                 }
             }
+        }
+    }
+
+    private fun resumeCurrentStation() {
+        val currentStation = station
+        if (player.mediaItemCount == 0) {
+            if (currentStation != null) {
+                playStation(currentStation)
+            }
+            return
+        }
+        runCatching {
+            player.prepare()
+            player.play()
+            publishPlayerState()
+        }.onFailure { error ->
+            _state.value = _state.value.copy(
+                status = PlaybackStatus.Error,
+                errorMessage = error.localizedMessage ?: "恢复播放失败",
+            )
+            scheduleReconnect(3_000L)
         }
     }
 

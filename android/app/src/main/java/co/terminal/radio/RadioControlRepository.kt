@@ -19,6 +19,13 @@ class RadioControlRepository(private val context: Context) {
 
     private fun sendAction(action: String) {
         val intent = Intent(context, RadioPlaybackService::class.java).setAction(action)
-        ContextCompat.startForegroundService(context, intent)
+        if (action.startsPlayback()) {
+            ContextCompat.startForegroundService(context, intent)
+        } else {
+            context.startService(intent)
+        }
     }
+
+    private fun String.startsPlayback(): Boolean = this == RadioServiceActions.ACTION_START_AUTO_PLAY ||
+        this == RadioServiceActions.ACTION_PLAY
 }
