@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import androidx.media.app.NotificationCompat.MediaStyle
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.media3.session.MediaSession
@@ -50,6 +51,15 @@ class RadioPlaybackService : MediaSessionService() {
             RadioServiceActions.ACTION_START_AUTO_PLAY -> playerManager.autoPlay()
             RadioServiceActions.ACTION_PLAY -> playerManager.play()
             RadioServiceActions.ACTION_PAUSE -> playerManager.pause()
+            RadioServiceActions.ACTION_PREVIOUS -> playerManager.playPrevious()
+            RadioServiceActions.ACTION_NEXT -> playerManager.playNext()
+            RadioServiceActions.ACTION_SELECT_STATION -> {
+                intent?.getStringExtra(RadioServiceActions.EXTRA_STATION_URL)?.let(playerManager::selectStation)
+            }
+            RadioServiceActions.ACTION_IMPORT_M3U -> {
+                intent?.getStringExtra(RadioServiceActions.EXTRA_M3U_CONTENT)?.let(playerManager::importM3u)
+            }
+            RadioServiceActions.ACTION_RESTORE_BUILT_IN -> playerManager.restoreBuiltInStations()
             RadioServiceActions.ACTION_STOP -> {
                 playerManager.stop()
                 ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -106,14 +116,29 @@ class RadioPlaybackService : MediaSessionService() {
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_radio)
             .setContentTitle(state.stationName.ifBlank { "Terminal Radio" })
-            .setContentText(state.status.displayText())
+            .setContentText("${state.sourceName} · ${state.status.displayText()}")
             .setContentIntent(openAppIntent)
             .setOngoing(state.status == PlaybackStatus.Playing || state.status == PlaybackStatus.Buffering)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .addAction(
+                NotificationCompat.Action(
+                    R.drawable.ic_skip_previous,
+                    "上一台",
+                    servicePendingIntent(RadioServiceActions.ACTION_PREVIOUS, 5),
+                ),
+            )
             .addAction(playPauseAction)
+            .addAction(
+                NotificationCompat.Action(
+                    R.drawable.ic_skip_next,
+                    "下一台",
+                    servicePendingIntent(RadioServiceActions.ACTION_NEXT, 6),
+                ),
+            )
             .addAction(
                 NotificationCompat.Action(
                     R.drawable.ic_skip_next,
@@ -127,6 +152,11 @@ class RadioPlaybackService : MediaSessionService() {
                     "停止",
                     servicePendingIntent(RadioServiceActions.ACTION_STOP, 4),
                 ),
+            )
+            .setStyle(
+                MediaStyle()
+                    .setMediaSession(mediaSession.sessionCompatToken)
+                    .setShowActionsInCompactView(0, 1, 2),
             )
             .build()
     }

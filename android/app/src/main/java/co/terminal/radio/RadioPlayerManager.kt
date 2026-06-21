@@ -1,5 +1,6 @@
 package co.terminal.radio
 
+import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -7,6 +8,7 @@ import android.content.IntentFilter
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import androidx.core.content.ContextCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -22,11 +24,19 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
 
 class RadioPlayerManager(
     private val context: Context,
     private val scope: CoroutineScope,
 ) {
+    private companion object {
+        const val CUSTOM_M3U_FILE = "custom.m3u"
+        const val BUILT_IN_SOURCE = "内置列表"
+        const val CUSTOM_SOURCE = "自定义列表"
+        const val DEFAULT_STATION_NAME = "音乐之声"
+    }
+
     val player: ExoPlayer = ExoPlayer.Builder(context).build().apply {
         setAudioAttributes(
             AudioAttributes.Builder()
@@ -42,7 +52,9 @@ class RadioPlayerManager(
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val _state = MutableStateFlow(PlaybackUiState())
     val state: StateFlow<PlaybackUiState> = _state.asStateFlow()
+    private var stations: List<Station> = emptyList()
     private var station: Station? = null
+    private var sourceName = BUILT_IN_SOURCE
     private var userPaused = false
     private var userStopped = false
     private var wasPlayingBeforeFocusLoss = false
@@ -69,8 +81,10 @@ class RadioPlayerManager(
 
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-                pause(userInitiated = false)
+            when (intent?.action) {
+                AudioManager.ACTION_AUDIO_BECOMING_NOISY,
+                BluetoothDevice.ACTION_ACL_DISCONNECTED,
+                -> safetyPause()
             }
         }
     }
@@ -96,6 +110,7 @@ class RadioPlayerManager(
     }
 
     fun start() {
+        ensureStationsLoaded()
         networkMonitor.start()
         registerNoisyReceiver()
         startWatchdog()
@@ -106,7 +121,8 @@ class RadioPlayerManager(
     fun autoPlay() {
         userPaused = false
         userStopped = false
-        val defaultStation = station ?: loadDefaultStation().also { station = it }
+        ensureStationsLoaded()
+        val defaultStation = station ?: selectDefaultStation().also { station = it }
         playStation(defaultStation)
     }
 
@@ -142,8 +158,54 @@ class RadioPlayerManager(
         userPaused = false
         userStopped = false
         reconnectJob?.cancel()
-        val currentStation = station ?: loadDefaultStation().also { station = it }
+        ensureStationsLoaded()
+        val currentStation = station ?: selectDefaultStation().also { station = it }
         playStation(currentStation)
+    }
+
+    fun selectStation(url: String) {
+        ensureStationsLoaded()
+        val selectedStation = stations.firstOrNull { it.url == url } ?: return
+        userPaused = false
+        userStopped = false
+        reconnectJob?.cancel()
+        playStation(selectedStation)
+    }
+
+    fun playPrevious() {
+        playStationAtOffset(-1)
+    }
+
+    fun playNext() {
+        playStationAtOffset(1)
+    }
+
+    fun importM3u(rawContent: String) {
+        val parsedStations = M3uParser.parse(rawContent)
+        if (parsedStations.isEmpty()) {
+            _state.value = _state.value.copy(
+                status = PlaybackStatus.Error,
+                errorMessage = "导入的 m3u 没有可播放地址",
+            )
+            return
+        }
+        customM3uFile().writeText(rawContent)
+        stations = parsedStations
+        sourceName = CUSTOM_SOURCE
+        userPaused = false
+        userStopped = false
+        val selectedStation = parsedStations.firstOrNull { it.name == DEFAULT_STATION_NAME } ?: parsedStations.first()
+        playStation(selectedStation)
+    }
+
+    fun restoreBuiltInStations() {
+        customM3uFile().delete()
+        stations = loadBuiltInStations()
+        sourceName = BUILT_IN_SOURCE
+        userPaused = false
+        userStopped = false
+        val selectedStation = selectDefaultStation()
+        playStation(selectedStation)
     }
 
     fun release() {
@@ -159,11 +221,15 @@ class RadioPlayerManager(
     }
 
     private fun playStation(station: Station) {
+        this.station = station
         if (station.url.isBlank()) {
             _state.value = _state.value.copy(
                 status = PlaybackStatus.Error,
                 stationName = station.name,
                 currentUrl = "",
+                stations = stations,
+                selectedStationUrl = station.url,
+                sourceName = sourceName,
                 errorMessage = "未找到可播放的电台地址",
             )
             return
@@ -180,18 +246,69 @@ class RadioPlayerManager(
             status = PlaybackStatus.Buffering,
             stationName = station.name,
             currentUrl = station.url,
+            stations = stations,
+            selectedStationUrl = station.url,
+            sourceName = sourceName,
             errorMessage = null,
         )
     }
 
-    private fun loadDefaultStation(): Station {
+    private fun ensureStationsLoaded() {
+        if (stations.isNotEmpty()) return
+        val customFile = customM3uFile()
+        if (customFile.exists()) {
+            val customStations = M3uParser.parse(customFile.readText())
+            if (customStations.isNotEmpty()) {
+                stations = customStations
+                sourceName = CUSTOM_SOURCE
+                station = selectDefaultStation()
+                publishSourceState()
+                return
+            }
+        }
+        stations = loadBuiltInStations()
+        sourceName = BUILT_IN_SOURCE
+        station = selectDefaultStation()
+        publishSourceState()
+    }
+
+    private fun loadBuiltInStations(): List<Station> {
         val content = context.assets.open("cnr.m3u").use { input ->
             input.bufferedReader().readText()
         }
-        val stations = M3uParser.parse(content)
-        return stations.firstOrNull { it.name == "音乐之声" }
-            ?: stations.firstOrNull()
-            ?: Station("音乐之声", "")
+        return M3uParser.parse(content)
+    }
+
+    private fun selectDefaultStation(): Station = stations.firstOrNull { it.name == DEFAULT_STATION_NAME }
+        ?: stations.firstOrNull()
+        ?: Station(DEFAULT_STATION_NAME, "")
+
+    private fun playStationAtOffset(offset: Int) {
+        ensureStationsLoaded()
+        if (stations.isEmpty()) return
+        val currentIndex = stations.indexOfFirst { it.url == station?.url }.takeIf { it >= 0 } ?: 0
+        val nextIndex = Math.floorMod(currentIndex + offset, stations.size)
+        userPaused = false
+        userStopped = false
+        reconnectJob?.cancel()
+        playStation(stations[nextIndex])
+    }
+
+    private fun safetyPause() {
+        pause(userInitiated = true)
+    }
+
+    private fun customM3uFile(): File = File(context.filesDir, CUSTOM_M3U_FILE)
+
+    private fun publishSourceState() {
+        val currentStation = station ?: selectDefaultStation()
+        _state.value = _state.value.copy(
+            stationName = currentStation.name,
+            currentUrl = currentStation.url,
+            stations = stations,
+            selectedStationUrl = currentStation.url,
+            sourceName = sourceName,
+        )
     }
 
     private fun scheduleReconnect(delayMs: Long) {
@@ -220,7 +337,7 @@ class RadioPlayerManager(
         elapsedJob = scope.launch {
             while (isActive) {
                 delay(1_000L)
-                _state.value = _state.value.copy(elapsedMs = player.currentPosition.coerceAtLeast(0L))
+        _state.value = _state.value.copy(elapsedMs = player.currentPosition.coerceAtLeast(0L))
             }
         }
     }
@@ -314,7 +431,11 @@ class RadioPlayerManager(
     private fun registerNoisyReceiver() {
         if (noisyReceiverRegistered) return
         noisyReceiverRegistered = true
-        context.registerReceiver(noisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
+        val filter = IntentFilter().apply {
+            addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+        }
+        ContextCompat.registerReceiver(context, noisyReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     private fun unregisterNoisyReceiver() {
@@ -335,6 +456,9 @@ class RadioPlayerManager(
         _state.value = _state.value.copy(
             status = status,
             elapsedMs = player.currentPosition.coerceAtLeast(0L),
+            stations = stations,
+            selectedStationUrl = station?.url.orEmpty(),
+            sourceName = sourceName,
             errorMessage = if (status == PlaybackStatus.Error) _state.value.errorMessage else null,
         )
     }

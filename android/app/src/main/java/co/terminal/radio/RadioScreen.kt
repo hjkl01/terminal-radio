@@ -1,5 +1,6 @@
 package co.terminal.radio
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,11 +9,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,45 +34,81 @@ fun RadioScreen(
     onPause: () -> Unit,
     onStop: () -> Unit,
     onReconnect: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onSelectStation: (String) -> Unit,
+    onImportM3u: () -> Unit,
+    onRestoreBuiltIn: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     MaterialTheme {
         Surface(modifier = modifier.fillMaxSize()) {
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(24.dp),
-                verticalArrangement = Arrangement.Center,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(
-                    text = "Terminal Radio",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = state.stationName,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-                StatusCard(state = state)
-                Spacer(modifier = Modifier.height(24.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Button(modifier = Modifier.weight(1f), onClick = onPlay) { Text("播放") }
-                    Button(modifier = Modifier.weight(1f), onClick = onPause) { Text("暂停") }
+                item {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Terminal Radio",
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = state.stationName,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Button(modifier = Modifier.weight(1f), onClick = onStop) { Text("停止") }
-                    Button(modifier = Modifier.weight(1f), onClick = onReconnect) { Text("重新连接") }
+                item { StatusCard(state = state) }
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        OutlinedButton(modifier = Modifier.weight(1f), onClick = onPrevious) { Text("上一台") }
+                        Button(modifier = Modifier.weight(1f), onClick = onPlay) { Text("播放") }
+                        Button(modifier = Modifier.weight(1f), onClick = onPause) { Text("暂停") }
+                        OutlinedButton(modifier = Modifier.weight(1f), onClick = onNext) { Text("下一台") }
+                    }
+                }
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Button(modifier = Modifier.weight(1f), onClick = onStop) { Text("停止") }
+                        Button(modifier = Modifier.weight(1f), onClick = onReconnect) { Text("重新连接") }
+                    }
+                }
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        OutlinedButton(modifier = Modifier.weight(1f), onClick = onImportM3u) { Text("导入 m3u") }
+                        OutlinedButton(modifier = Modifier.weight(1f), onClick = onRestoreBuiltIn) { Text("恢复内置列表") }
+                    }
+                }
+                item {
+                    Text(
+                        modifier = Modifier.fillMaxWidth(),
+                        text = "播放列表（${state.sourceName} · ${state.stations.size} 个）",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                items(state.stations, key = { it.url }) { station ->
+                    StationRow(
+                        station = station,
+                        selected = station.url == state.selectedStationUrl,
+                        onClick = { onSelectStation(station.url) },
+                    )
                 }
             }
         }
@@ -89,8 +129,47 @@ private fun StatusCard(state: PlaybackUiState) {
             InfoRow("播放状态", state.status.displayName())
             InfoRow("网络状态", if (state.isNetworkAvailable) "已连接" else "已断开")
             InfoRow("播放时长", state.elapsedMs.formatDuration())
+            InfoRow("列表来源", state.sourceName)
             InfoRow("当前 URL", state.currentUrl.ifBlank { "等待加载" })
             state.errorMessage?.let { InfoRow("错误", it) }
+        }
+    }
+}
+
+@Composable
+private fun StationRow(
+    station: Station,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            },
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = if (selected) "正在播放 · ${station.name}" else station.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = station.url,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

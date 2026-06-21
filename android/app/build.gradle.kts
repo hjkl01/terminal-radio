@@ -11,8 +11,8 @@ android {
         applicationId = "co.terminal.radio"
         minSdk = 24
         targetSdk = 34
-        versionCode = 11
-        versionName = "1.2.4"
+        versionCode = 12
+        versionName = "1.2.5"
     }
 
     buildTypes {
@@ -59,6 +59,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.2.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.2.0")
     implementation("androidx.media3:media3-session:1.2.0")
+    implementation("androidx.media:media:1.7.0")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")

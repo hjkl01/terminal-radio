@@ -21,6 +21,16 @@ class MainActivity : ComponentActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) {}
+    private val m3uFilePicker = registerForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri ->
+        uri ?: return@registerForActivityResult
+        runCatching {
+            contentResolver.openInputStream(uri)?.use { input ->
+                input.bufferedReader().readText()
+            }
+        }.getOrNull()?.let(viewModel::importM3u)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,6 +45,11 @@ class MainActivity : ComponentActivity() {
                 onPause = viewModel::pause,
                 onStop = viewModel::stop,
                 onReconnect = viewModel::reconnect,
+                onPrevious = viewModel::previous,
+                onNext = viewModel::next,
+                onSelectStation = viewModel::selectStation,
+                onImportM3u = { m3uFilePicker.launch("*/*") },
+                onRestoreBuiltIn = viewModel::restoreBuiltInStations,
             )
         }
     }
