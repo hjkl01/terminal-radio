@@ -1,13 +1,9 @@
 package co.terminal.radio
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.PowerManager
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,7 +31,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestNotificationPermission()
-        requestBatteryOptimizationWhitelist()
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
             LaunchedEffect(Unit) { viewModel.startAutoPlay() }
@@ -62,13 +57,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestBatteryOptimizationWhitelist() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
-        if (powerManager.isIgnoringBatteryOptimizations(packageName)) return
-        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-            data = Uri.parse("package:$packageName")
-        }
-        runCatching { startActivity(intent) }
-    }
 }
