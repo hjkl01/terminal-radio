@@ -11,7 +11,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            volume: 0.8,
+            volume: 0.66,
             favorites: Vec::new(),
         }
     }
@@ -81,7 +81,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.volume, 0.8);
+        assert_eq!(config.volume, 0.66);
         assert!(config.favorites.is_empty());
     }
 }

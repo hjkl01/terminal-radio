@@ -26,7 +26,7 @@ pub struct AudioPlayer {
 impl AudioPlayer {
     pub fn new() -> Self {
         Self {
-            volume: Arc::new(Mutex::new(0.8)),
+            volume: Arc::new(Mutex::new(0.66)),
             playing: Arc::new(Mutex::new(false)),
             paused: Arc::new(Mutex::new(false)),
             pcm_buffer: Arc::new(Mutex::new(VecDeque::new())),

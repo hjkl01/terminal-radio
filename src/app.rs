@@ -4,6 +4,8 @@ use crate::m3u::Station;
 use crate::player::AudioPlayer;
 use crate::error::Result;
 
+const VOLUME_STEP: f32 = 0.05;
+
 #[derive(PartialEq)]
 pub enum PlaybackState {
     Stopped,
@@ -26,6 +28,7 @@ impl App {
     pub fn new(stations: Vec<Station>) -> Result<Self> {
         let config = Config::load()?;
         let player = AudioPlayer::new();
+        player.set_volume(config.volume);
         let hls_streamer = HlsStreamer::new();
 
         // Default to "音乐之声" if available
@@ -79,14 +82,14 @@ impl App {
     }
 
     pub fn volume_up(&mut self) {
-        let volume = (self.player.get_volume() + 0.1).min(1.0);
+        let volume = (self.player.get_volume() + VOLUME_STEP).min(1.0);
         self.player.set_volume(volume);
         self.config.volume = volume;
         let _ = self.config.save();
     }
 
     pub fn volume_down(&mut self) {
-        let volume = (self.player.get_volume() - 0.1).max(0.0);
+        let volume = (self.player.get_volume() - VOLUME_STEP).max(0.0);
         self.player.set_volume(volume);
         self.config.volume = volume;
         let _ = self.config.save();
