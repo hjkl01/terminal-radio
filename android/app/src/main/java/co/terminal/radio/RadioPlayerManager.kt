@@ -1,12 +1,12 @@
 package co.terminal.radio
 
-import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.AudioDeviceInfo
 import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.media3.common.AudioAttributes
@@ -63,7 +63,9 @@ class RadioPlayerManager(
     private var watchdogJob: Job? = null
     private var elapsedJob: Job? = null
     private var networkJob: Job? = null
+    private var bluetoothRouteJob: Job? = null
     private var noisyReceiverRegistered = false
+    private var bluetoothAudioConnected: Boolean? = null
 
     private val audioFocusRequest: AudioFocusRequest? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
@@ -81,10 +83,8 @@ class RadioPlayerManager(
 
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                AudioManager.ACTION_AUDIO_BECOMING_NOISY,
-                BluetoothDevice.ACTION_ACL_DISCONNECTED,
-                -> safetyPause()
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                syncBluetoothAudioRoute()
             }
         }
     }
@@ -113,6 +113,7 @@ class RadioPlayerManager(
         ensureStationsLoaded()
         networkMonitor.start()
         registerNoisyReceiver()
+        startBluetoothRouteMonitor()
         startWatchdog()
         startElapsedTicker()
         observeNetwork()
@@ -122,6 +123,10 @@ class RadioPlayerManager(
         userPaused = false
         userStopped = false
         ensureStationsLoaded()
+        if (!hasBluetoothAudioOutput()) {
+            pause(userInitiated = false)
+            return
+        }
         val defaultStation = station ?: selectDefaultStation().also { station = it }
         playStation(defaultStation)
     }
@@ -129,6 +134,10 @@ class RadioPlayerManager(
     fun play() {
         userPaused = false
         userStopped = false
+        if (!hasBluetoothAudioOutput()) {
+            pause(userInitiated = false)
+            return
+        }
         if (station == null || player.mediaItemCount == 0) {
             autoPlay()
             return
@@ -159,6 +168,10 @@ class RadioPlayerManager(
         userStopped = false
         reconnectJob?.cancel()
         ensureStationsLoaded()
+        if (!hasBluetoothAudioOutput()) {
+            pause(userInitiated = false)
+            return
+        }
         val currentStation = station ?: selectDefaultStation().also { station = it }
         playStation(currentStation)
     }
@@ -214,6 +227,7 @@ class RadioPlayerManager(
         watchdogJob?.cancel()
         elapsedJob?.cancel()
         networkJob?.cancel()
+        bluetoothRouteJob?.cancel()
         networkMonitor.stop()
         unregisterNoisyReceiver()
         abandonAudioFocus()
@@ -232,6 +246,10 @@ class RadioPlayerManager(
                 sourceName = sourceName,
                 errorMessage = "未找到可播放的电台地址",
             )
+            return
+        }
+        if (!hasBluetoothAudioOutput()) {
+            pause(userInitiated = false)
             return
         }
         if (!requestAudioFocus()) return
@@ -294,10 +312,6 @@ class RadioPlayerManager(
         playStation(stations[nextIndex])
     }
 
-    private fun safetyPause() {
-        pause(userInitiated = true)
-    }
-
     private fun customM3uFile(): File = File(context.filesDir, CUSTOM_M3U_FILE)
 
     private fun publishSourceState() {
@@ -312,11 +326,11 @@ class RadioPlayerManager(
     }
 
     private fun scheduleReconnect(delayMs: Long) {
-        if (userPaused || userStopped) return
+        if (userPaused || userStopped || !hasBluetoothAudioOutput()) return
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             delay(delayMs)
-            if (!userPaused && !userStopped) reconnect()
+            if (!userPaused && !userStopped && hasBluetoothAudioOutput()) reconnect()
         }
     }
 
@@ -325,7 +339,7 @@ class RadioPlayerManager(
         watchdogJob = scope.launch {
             while (isActive) {
                 delay(30_000L)
-                if (!player.isPlaying && !userPaused && !userStopped) {
+                if (hasBluetoothAudioOutput() && !player.isPlaying && !userPaused && !userStopped) {
                     resumeCurrentStation()
                 }
             }
@@ -337,7 +351,7 @@ class RadioPlayerManager(
         elapsedJob = scope.launch {
             while (isActive) {
                 delay(1_000L)
-        _state.value = _state.value.copy(elapsedMs = player.currentPosition.coerceAtLeast(0L))
+                _state.value = _state.value.copy(elapsedMs = player.currentPosition.coerceAtLeast(0L))
             }
         }
     }
@@ -347,9 +361,56 @@ class RadioPlayerManager(
         networkJob = scope.launch {
             networkMonitor.isOnline.collect { isOnline ->
                 _state.value = _state.value.copy(isNetworkAvailable = isOnline)
-                if (isOnline && !userPaused && !userStopped && station != null && !player.isPlaying) {
+                if (isOnline && hasBluetoothAudioOutput() && !userPaused && !userStopped && station != null && !player.isPlaying) {
                     resumeCurrentStation()
                 }
+            }
+        }
+    }
+
+    private fun startBluetoothRouteMonitor() {
+        if (bluetoothRouteJob != null) return
+        bluetoothRouteJob = scope.launch {
+            syncBluetoothAudioRoute()
+            while (isActive) {
+                delay(1_000L)
+                syncBluetoothAudioRoute()
+            }
+        }
+    }
+
+    private fun syncBluetoothAudioRoute() {
+        val connected = hasBluetoothAudioOutput()
+        val previous = bluetoothAudioConnected
+        bluetoothAudioConnected = connected
+
+        if (previous == connected) return
+
+        if (connected) {
+            // 蓝牙音频设备刚连接：自动开始播放当前电台。
+            if (!userStopped) {
+                userPaused = false
+                autoPlay()
+            }
+        } else {
+            // 蓝牙音频断开：立即暂停，避免声音从手机扬声器继续播放。
+            reconnectJob?.cancel()
+            player.pause()
+            publishPlayerState(PlaybackStatus.Paused)
+        }
+    }
+
+    private fun hasBluetoothAudioOutput(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        return audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { device ->
+            when (device.type) {
+                AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+                AudioDeviceInfo.TYPE_BLE_HEADSET,
+                AudioDeviceInfo.TYPE_BLE_SPEAKER,
+                AudioDeviceInfo.TYPE_BLE_BROADCAST,
+                -> true
+                else -> false
             }
         }
     }
@@ -361,33 +422,28 @@ class RadioPlayerManager(
                 pause(userInitiated = false)
             }
             AudioManager.AUDIOFOCUS_LOSS -> {
+                // 手机上的其他播放器获得长期音频焦点时，立即暂停电台。
+                // 不做定时恢复，避免与手机本机音频争抢播放。
                 wasPlayingBeforeFocusLoss = player.isPlaying
+                focusRecoveryJob?.cancel()
                 player.pause()
-                startFocusRecovery()
+                publishPlayerState(PlaybackStatus.Paused)
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> player.volume = 0.4f
             AudioManager.AUDIOFOCUS_GAIN -> {
                 player.volume = 1f
                 focusRecoveryJob?.cancel()
-                if (wasPlayingBeforeFocusLoss && !userPaused && !userStopped) play()
-            }
-        }
-    }
-
-    private fun startFocusRecovery() {
-        focusRecoveryJob?.cancel()
-        focusRecoveryJob = scope.launch {
-            while (isActive && !userPaused && !userStopped) {
-                delay(10_000L)
-                if (!player.isPlaying && requestAudioFocus()) {
-                    resumeCurrentStation()
-                    break
-                }
+                // 只有短暂失焦时才自动恢复；长期失焦意味着手机本机正在播放。
+                if (wasPlayingBeforeFocusLoss && !userPaused && !userStopped && hasBluetoothAudioOutput()) play()
             }
         }
     }
 
     private fun resumeCurrentStation() {
+        if (!hasBluetoothAudioOutput()) {
+            pause(userInitiated = false)
+            return
+        }
         val currentStation = station
         if (player.mediaItemCount == 0) {
             if (currentStation != null) {
@@ -396,6 +452,7 @@ class RadioPlayerManager(
             return
         }
         runCatching {
+            if (!requestAudioFocus()) return@runCatching
             player.prepare()
             player.play()
             publishPlayerState()
@@ -433,7 +490,6 @@ class RadioPlayerManager(
         noisyReceiverRegistered = true
         val filter = IntentFilter().apply {
             addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
-            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
         }
         ContextCompat.registerReceiver(context, noisyReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
