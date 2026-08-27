@@ -1,40 +1,42 @@
-FROM gradle:8.2-jdk17
+FROM eclipse-temurin:17-jdk-jammy
 
-# Install Android SDK command-line tools
+# Android / Gradle versions used by the project.
+ARG GRADLE_VERSION=8.2
 ARG ANDROID_SDK_URL=https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
 ARG ANDROID_BUILD_TOOLS_VERSION=33.0.0
 ARG ANDROID_PLATFORM_VERSION=34
 
-# Step 1: Download and install Android command-line tools
-RUN mkdir -p /tmp/android-sdk && \
-    curl -sSL ${ANDROID_SDK_URL} -o /tmp/android-sdk/cmdline-tools.zip && \
-    cd /tmp/android-sdk && unzip -q cmdline-tools.zip && \
-    mkdir -p /opt/android-sdk/cmdline-tools && \
-    mv /tmp/android-sdk/cmdline-tools /opt/android-sdk/cmdline-tools/latest && \
-    rm -rf /tmp/android-sdk
-
-# Step 2: Set environment variables
 ENV ANDROID_HOME=/opt/android-sdk
-ENV PATH=/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:${PATH}
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV GRADLE_HOME=/opt/gradle/gradle-${GRADLE_VERSION}
+ENV PATH=/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:${GRADLE_HOME}/bin:${PATH}
 
-# Step 3: Accept licenses and install SDK components
-RUN yes | sdkmanager --licenses >/dev/null 2>&1 || true && \
-    sdkmanager "platforms;android-${ANDROID_PLATFORM_VERSION}" "build-tools;${ANDROID_BUILD_TOOLS_VERSION}"
+# Install the Android command-line tools, Android SDK and the exact Gradle
+# version required by the project. The host does not need Gradle installed.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl unzip ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /opt/android-sdk/cmdline-tools /tmp/android-sdk && \
+    curl -fsSL "${ANDROID_SDK_URL}" -o /tmp/android-sdk/cmdline-tools.zip && \
+    unzip -q /tmp/android-sdk/cmdline-tools.zip -d /tmp/android-sdk && \
+    mv /tmp/android-sdk/cmdline-tools /opt/android-sdk/cmdline-tools/latest && \
+    rm -rf /tmp/android-sdk && \
+    yes | sdkmanager --licenses >/dev/null 2>&1 || true && \
+    sdkmanager "platform-tools" "platforms;android-${ANDROID_PLATFORM_VERSION}" "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" && \
+    mkdir -p /opt/gradle && \
+    curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip && \
+    unzip -q /tmp/gradle.zip -d /opt/gradle && \
+    rm -f /tmp/gradle.zip
 
-# Step 4: Copy Gradle distribution and project files
-COPY gradle-8.2-bin.zip /opt/gradle-8.2-bin.zip
-COPY android/gradle/ /workspace/android/gradle/
-COPY android/gradlew /workspace/android/
-COPY android/gradle.properties /workspace/android/
-COPY android/app/ /workspace/android/app/
-COPY android/build.gradle.kts /workspace/android/build.gradle.kts
-COPY android/settings.gradle.kts /workspace/android/settings.gradle.kts
 WORKDIR /workspace/android
 
-# Step 5: Extract Gradle distribution to wrapper cache location
-RUN unzip -q /opt/gradle-8.2-bin.zip -d /opt/ && \
-    rm /opt/gradle-8.2-bin.zip && \
-    mkdir -p /root/.gradle/wrapper/dists/gradle-8.2-bin && \
-    mv /opt/gradle-8.2 /root/.gradle/wrapper/dists/gradle-8.2-bin && \
-    chmod +x gradlew && \
-    ./gradlew assembleDebug
+# The project Gradle wrapper is kept as the source of truth. If its required
+# distribution is not cached, Gradle Wrapper will download it automatically.
+COPY android/gradle/ /workspace/android/gradle/
+COPY android/gradlew /workspace/android/gradlew
+COPY android/gradle.properties /workspace/android/gradle.properties
+COPY android/build.gradle.kts /workspace/android/build.gradle.kts
+COPY android/settings.gradle.kts /workspace/android/settings.gradle.kts
+COPY android/app/ /workspace/android/app/
+
+RUN chmod +x gradlew && ./gradlew --version
