@@ -91,13 +91,8 @@ class RadioPlayerManager(
 
     init {
         player.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                publishPlayerState()
-            }
-
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                publishPlayerState()
-            }
+            override fun onPlaybackStateChanged(playbackState: Int) = publishPlayerState()
+            override fun onIsPlayingChanged(isPlaying: Boolean) = publishPlayerState()
 
             override fun onPlayerError(error: PlaybackException) {
                 _state.value = _state.value.copy(
@@ -124,7 +119,7 @@ class RadioPlayerManager(
         userStopped = false
         ensureStationsLoaded()
         if (!hasBluetoothAudioOutput()) {
-            pause(userInitiated = false)
+            publishBluetoothState(false, "未连接蓝牙音频设备，不会使用手机扬声器播放")
             return
         }
         val defaultStation = station ?: selectDefaultStation().also { station = it }
@@ -135,7 +130,7 @@ class RadioPlayerManager(
         userPaused = false
         userStopped = false
         if (!hasBluetoothAudioOutput()) {
-            pause(userInitiated = false)
+            publishBluetoothState(false, "请先连接蓝牙耳机或蓝牙音箱")
             return
         }
         if (station == null || player.mediaItemCount == 0) {
@@ -169,7 +164,7 @@ class RadioPlayerManager(
         reconnectJob?.cancel()
         ensureStationsLoaded()
         if (!hasBluetoothAudioOutput()) {
-            pause(userInitiated = false)
+            publishBluetoothState(false, "请先连接蓝牙耳机或蓝牙音箱")
             return
         }
         val currentStation = station ?: selectDefaultStation().also { station = it }
@@ -185,13 +180,8 @@ class RadioPlayerManager(
         playStation(selectedStation)
     }
 
-    fun playPrevious() {
-        playStationAtOffset(-1)
-    }
-
-    fun playNext() {
-        playStationAtOffset(1)
-    }
+    fun playPrevious() = playStationAtOffset(-1)
+    fun playNext() = playStationAtOffset(1)
 
     fun importM3u(rawContent: String) {
         val parsedStations = M3uParser.parse(rawContent)
@@ -249,7 +239,7 @@ class RadioPlayerManager(
             return
         }
         if (!hasBluetoothAudioOutput()) {
-            pause(userInitiated = false)
+            publishBluetoothState(false, "未连接蓝牙音频设备，不会使用手机扬声器播放")
             return
         }
         if (!requestAudioFocus()) return
@@ -267,6 +257,7 @@ class RadioPlayerManager(
             stations = stations,
             selectedStationUrl = station.url,
             sourceName = sourceName,
+            isBluetoothConnected = true,
             errorMessage = null,
         )
     }
@@ -291,9 +282,7 @@ class RadioPlayerManager(
     }
 
     private fun loadBuiltInStations(): List<Station> {
-        val content = context.assets.open("cnr.m3u").use { input ->
-            input.bufferedReader().readText()
-        }
+        val content = context.assets.open("cnr.m3u").use { input -> input.bufferedReader().readText() }
         return M3uParser.parse(content)
     }
 
@@ -322,6 +311,7 @@ class RadioPlayerManager(
             stations = stations,
             selectedStationUrl = currentStation.url,
             sourceName = sourceName,
+            isBluetoothConnected = hasBluetoothAudioOutput(),
         )
     }
 
@@ -339,9 +329,7 @@ class RadioPlayerManager(
         watchdogJob = scope.launch {
             while (isActive) {
                 delay(30_000L)
-                if (hasBluetoothAudioOutput() && !player.isPlaying && !userPaused && !userStopped) {
-                    resumeCurrentStation()
-                }
+                if (hasBluetoothAudioOutput() && !player.isPlaying && !userPaused && !userStopped) resumeCurrentStation()
             }
         }
     }
@@ -383,6 +371,7 @@ class RadioPlayerManager(
         val connected = hasBluetoothAudioOutput()
         val previous = bluetoothAudioConnected
         bluetoothAudioConnected = connected
+        _state.value = _state.value.copy(isBluetoothConnected = connected)
 
         if (previous == connected) return
 
@@ -396,23 +385,33 @@ class RadioPlayerManager(
             // 蓝牙音频断开：立即暂停，避免声音从手机扬声器继续播放。
             reconnectJob?.cancel()
             player.pause()
-            publishPlayerState(PlaybackStatus.Paused)
+            abandonAudioFocus()
+            publishBluetoothState(false, "蓝牙已断开，已暂停播放")
         }
     }
 
     private fun hasBluetoothAudioOutput(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
-        return audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { device ->
-            when (device.type) {
-                AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-                AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
-                AudioDeviceInfo.TYPE_BLE_HEADSET,
-                AudioDeviceInfo.TYPE_BLE_SPEAKER,
-                AudioDeviceInfo.TYPE_BLE_BROADCAST,
-                -> true
-                else -> false
+        return runCatching {
+            audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { device ->
+                when (device.type) {
+                    AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                    AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+                    AudioDeviceInfo.TYPE_BLE_HEADSET,
+                    AudioDeviceInfo.TYPE_BLE_SPEAKER,
+                    AudioDeviceInfo.TYPE_BLE_BROADCAST -> true
+                    else -> false
+                }
             }
-        }
+        }.getOrDefault(false)
+    }
+
+    private fun publishBluetoothState(connected: Boolean, message: String? = null) {
+        _state.value = _state.value.copy(
+            isBluetoothConnected = connected,
+            status = if (connected) _state.value.status else PlaybackStatus.Paused,
+            errorMessage = message,
+        )
     }
 
     private fun handleAudioFocusChange(focusChange: Int) {
@@ -422,8 +421,6 @@ class RadioPlayerManager(
                 pause(userInitiated = false)
             }
             AudioManager.AUDIOFOCUS_LOSS -> {
-                // 手机上的其他播放器获得长期音频焦点时，立即暂停电台。
-                // 不做定时恢复，避免与手机本机音频争抢播放。
                 wasPlayingBeforeFocusLoss = player.isPlaying
                 focusRecoveryJob?.cancel()
                 player.pause()
@@ -433,7 +430,6 @@ class RadioPlayerManager(
             AudioManager.AUDIOFOCUS_GAIN -> {
                 player.volume = 1f
                 focusRecoveryJob?.cancel()
-                // 只有短暂失焦时才自动恢复；长期失焦意味着手机本机正在播放。
                 if (wasPlayingBeforeFocusLoss && !userPaused && !userStopped && hasBluetoothAudioOutput()) play()
             }
         }
@@ -441,14 +437,12 @@ class RadioPlayerManager(
 
     private fun resumeCurrentStation() {
         if (!hasBluetoothAudioOutput()) {
-            pause(userInitiated = false)
+            publishBluetoothState(false, "未连接蓝牙音频设备，不会使用手机扬声器播放")
             return
         }
         val currentStation = station
         if (player.mediaItemCount == 0) {
-            if (currentStation != null) {
-                playStation(currentStation)
-            }
+            if (currentStation != null) playStation(currentStation)
             return
         }
         runCatching {
@@ -488,9 +482,7 @@ class RadioPlayerManager(
     private fun registerNoisyReceiver() {
         if (noisyReceiverRegistered) return
         noisyReceiverRegistered = true
-        val filter = IntentFilter().apply {
-            addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
-        }
+        val filter = IntentFilter().apply { addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY) }
         ContextCompat.registerReceiver(context, noisyReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
@@ -515,7 +507,8 @@ class RadioPlayerManager(
             stations = stations,
             selectedStationUrl = station?.url.orEmpty(),
             sourceName = sourceName,
-            errorMessage = if (status == PlaybackStatus.Error) _state.value.errorMessage else null,
+            isBluetoothConnected = hasBluetoothAudioOutput(),
+            errorMessage = if (status == PlaybackStatus.Error) _state.value.errorMessage else _state.value.errorMessage,
         )
     }
 }
