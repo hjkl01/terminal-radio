@@ -22,6 +22,7 @@ data class PlaybackUiState(
     val selectedStationUrl: String = "",
     val sourceName: String = "内置列表",
     val isNetworkAvailable: Boolean = true,
+    val isBluetoothConnected: Boolean = false,
     val elapsedMs: Long = 0L,
     val errorMessage: String? = null,
 )
