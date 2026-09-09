@@ -72,8 +72,8 @@ fun RadioScreen(
             item {
                 Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("Terminal Radio", MaterialTheme.typography.headlineMedium, Ink, fontWeight = FontWeight.ExtraBold)
-                        Text("随时收听 · 蓝牙优先", MaterialTheme.typography.bodyMedium, Muted)
+                        Text("Terminal Radio", style = MaterialTheme.typography.headlineMedium, color = Ink, fontWeight = FontWeight.ExtraBold)
+                        Text("随时收听 · 蓝牙优先", style = MaterialTheme.typography.bodyMedium, color = Muted)
                     }
                     BluetoothDot(state.isBluetoothConnected)
                 }
@@ -82,8 +82,14 @@ fun RadioScreen(
             item { NowPlaying(state) }
             item {
                 Controls(
-                    state.isBluetoothConnected, state.status,
-                    onPrevious, onPlay, onPause, onNext, onStop, onReconnect,
+                    bluetoothConnected = state.isBluetoothConnected,
+                    status = state.status,
+                    onPrevious = onPrevious,
+                    onPlay = onPlay,
+                    onPause = onPause,
+                    onNext = onNext,
+                    onStop = onStop,
+                    onReconnect = onReconnect,
                 )
             }
             item {
@@ -95,16 +101,19 @@ fun RadioScreen(
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
                     Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                        Text("电台列表", MaterialTheme.typography.titleLarge, Ink, fontWeight = FontWeight.ExtraBold)
-                        Text("${state.stations.size} 个", MaterialTheme.typography.labelMedium, Muted)
+                        Text("电台列表", style = MaterialTheme.typography.titleLarge, color = Ink, fontWeight = FontWeight.ExtraBold)
+                        Text("${state.stations.size} 个", style = MaterialTheme.typography.labelMedium, color = Muted)
                     }
-                    Text("未连接蓝牙时不会从手机扬声器主动播放", MaterialTheme.typography.bodySmall, Muted)
+                    Text("未连接蓝牙时不会从手机扬声器主动播放", style = MaterialTheme.typography.bodySmall, color = Muted)
                 }
             }
             items(state.stations, key = { it.url }) { station ->
-                StationRow(station, station.url == state.selectedStationUrl, state.status == PlaybackStatus.Playing && station.url == state.selectedStationUrl) {
-                    onSelectStation(station.url)
-                }
+                StationRow(
+                    station = station,
+                    selected = station.url == state.selectedStationUrl,
+                    playing = state.status == PlaybackStatus.Playing && station.url == state.selectedStationUrl,
+                    onClick = { onSelectStation(station.url) },
+                )
             }
         }
     }
@@ -112,34 +121,46 @@ fun RadioScreen(
 
 @Composable
 private fun BluetoothDot(connected: Boolean) {
-    Box(Modifier.size(42.dp).clip(CircleShape).background(if (connected) AccentSoft else Color(0xFFE8EDF0)), Alignment.Center) {
+    Box(
+        modifier = Modifier.size(42.dp).clip(CircleShape).background(if (connected) AccentSoft else Color(0xFFE8EDF0)),
+        contentAlignment = Alignment.Center,
+    ) {
         Box(Modifier.size(11.dp).clip(CircleShape).background(if (connected) Accent else Color(0xFF9AA7AF)))
     }
 }
 
 @Composable
 private fun BluetoothBanner(connected: Boolean) {
-    Card(Modifier.fillMaxWidth(), RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(if (connected) AccentSoft else Color(0xFFFFF3E0))) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = if (connected) AccentSoft else Color(0xFFFFF3E0)),
+    ) {
         Row(Modifier.fillMaxWidth().padding(15.dp), Alignment.CenterVertically, Arrangement.spacedBy(12.dp)) {
-            Text(if (connected) "♫" else "⌁", MaterialTheme.typography.titleLarge, if (connected) Accent else Color(0xFFB76E00))
-            Column(Modifier.weight(1f), Arrangement.spacedBy(2.dp)) {
-                Text(if (connected) "蓝牙音频已连接" else "等待蓝牙音频设备", MaterialTheme.typography.titleSmall, Ink, fontWeight = FontWeight.Bold)
-                Text(if (connected) "电台可以播放" else "连接后才会自动播放", MaterialTheme.typography.bodySmall, Muted)
+            Text(if (connected) "♫" else "⌁", style = MaterialTheme.typography.titleLarge, color = if (connected) Accent else Color(0xFFB76E00))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(if (connected) "蓝牙音频已连接" else "等待蓝牙音频设备", style = MaterialTheme.typography.titleSmall, color = Ink, fontWeight = FontWeight.Bold)
+                Text(if (connected) "电台可以播放" else "连接后才会自动播放", style = MaterialTheme.typography.bodySmall, color = Muted)
             }
-            Text(if (connected) "已连接" else "未连接", MaterialTheme.typography.labelMedium, if (connected) Accent else Color(0xFFB76E00), fontWeight = FontWeight.Bold)
+            Text(if (connected) "已连接" else "未连接", style = MaterialTheme.typography.labelMedium, color = if (connected) Accent else Color(0xFFB76E00), fontWeight = FontWeight.Bold)
         }
     }
 }
 
 @Composable
 private fun NowPlaying(state: PlaybackUiState) {
-    ElevatedCard(Modifier.fillMaxWidth(), RoundedCornerShape(28.dp), colors = CardDefaults.elevatedCardColors(Color.White), elevation = CardDefaults.elevatedCardElevation(2.dp)) {
-        Column(Modifier.padding(20.dp), Arrangement.spacedBy(17.dp)) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(17.dp)) {
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), Arrangement.spacedBy(6.dp)) {
-                    Text("NOW PLAYING", MaterialTheme.typography.labelSmall, Accent, fontWeight = FontWeight.ExtraBold)
-                    Text(state.stationName.ifBlank { "未选择电台" }, MaterialTheme.typography.headlineSmall, Ink, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(state.sourceName, MaterialTheme.typography.bodyMedium, Muted)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = Accent, fontWeight = FontWeight.ExtraBold)
+                    Text(state.stationName.ifBlank { "未选择电台" }, style = MaterialTheme.typography.headlineSmall, color = Ink, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(state.sourceName, style = MaterialTheme.typography.bodyMedium, color = Muted)
                 }
                 Spacer(Modifier.width(14.dp))
                 PlaybackOrb(state.status)
@@ -149,7 +170,9 @@ private fun NowPlaying(state: PlaybackUiState) {
                 InfoTile(Modifier.weight(1f), "网络", if (state.isNetworkAvailable) "在线" else "离线")
                 InfoTile(Modifier.weight(1f), "时长", state.elapsedMs.formatDuration())
             }
-            state.errorMessage?.let { Text(it, Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0xFFFFE9E9)).padding(12.dp), MaterialTheme.typography.bodySmall, Color(0xFFB3261E)) }
+            state.errorMessage?.let { message ->
+                Text(message, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0xFFFFE9E9)).padding(12.dp), style = MaterialTheme.typography.bodySmall, color = Color(0xFFB3261E))
+            }
         }
     }
 }
@@ -158,20 +181,32 @@ private fun NowPlaying(state: PlaybackUiState) {
 private fun PlaybackOrb(status: PlaybackStatus) {
     val active = status == PlaybackStatus.Playing || status == PlaybackStatus.Buffering
     val transition = rememberInfiniteTransition(label = "orb")
-    val pulse by transition.animateFloat(0.82f, 1f, infiniteRepeatable(tween(if (status == PlaybackStatus.Buffering) 650 else 1000), RepeatMode.Reverse), label = "pulse")
-    val text = when (status) { PlaybackStatus.Playing -> "▶"; PlaybackStatus.Buffering -> "…"; PlaybackStatus.Paused -> "Ⅱ"; PlaybackStatus.Stopped -> "■"; PlaybackStatus.Idle -> "—"; PlaybackStatus.Error -> "!" }
+    val pulse by transition.animateFloat(
+        initialValue = 0.82f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(if (status == PlaybackStatus.Buffering) 650 else 1000), RepeatMode.Reverse),
+        label = "pulse",
+    )
+    val text = when (status) {
+        PlaybackStatus.Playing -> "▶"
+        PlaybackStatus.Buffering -> "…"
+        PlaybackStatus.Paused -> "Ⅱ"
+        PlaybackStatus.Stopped -> "■"
+        PlaybackStatus.Idle -> "—"
+        PlaybackStatus.Error -> "!"
+    }
     Box(Modifier.size(82.dp).clip(RoundedCornerShape(26.dp)).background(if (status == PlaybackStatus.Playing) AccentSoft else Color(0xFFE8EDF0)), Alignment.Center) {
         Box(Modifier.size(if (active) (48 * pulse).dp else 42.dp).clip(CircleShape).background(Color.White), Alignment.Center) {
-            Text(text, MaterialTheme.typography.titleLarge, Accent, fontWeight = FontWeight.ExtraBold)
+            Text(text, style = MaterialTheme.typography.titleLarge, color = Accent, fontWeight = FontWeight.ExtraBold)
         }
     }
 }
 
 @Composable
 private fun InfoTile(modifier: Modifier, label: String, value: String) {
-    Column(modifier.clip(RoundedCornerShape(15.dp)).background(Color(0xFFF4F6F7)).padding(10.dp), Arrangement.spacedBy(3.dp)) {
-        Text(label, MaterialTheme.typography.labelSmall, Muted)
-        Text(value, MaterialTheme.typography.labelLarge, Ink, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Column(modifier.clip(RoundedCornerShape(15.dp)).background(Color(0xFFF4F6F7)).padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = Muted)
+        Text(value, style = MaterialTheme.typography.labelLarge, color = Ink, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -186,13 +221,13 @@ private fun Controls(
     onStop: () -> Unit,
     onReconnect: () -> Unit,
 ) {
-    Card(Modifier.fillMaxWidth(), RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(Color.White)) {
-        Column(Modifier.padding(14.dp), Arrangement.spacedBy(10.dp)) {
+    Card(Modifier.fillMaxWidth(), RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
-                OutlinedButton(Modifier.weight(1f).height(48.dp), onClick = onPrevious, shape = RoundedCornerShape(16.dp)) { Text("‹", MaterialTheme.typography.titleLarge) }
+                OutlinedButton(Modifier.weight(1f).height(48.dp), onClick = onPrevious, shape = RoundedCornerShape(16.dp)) { Text("‹", style = MaterialTheme.typography.titleLarge) }
                 Button(Modifier.weight(1.45f).height(48.dp), onClick = onPlay, enabled = bluetoothConnected, shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = Accent)) { Text(if (status == PlaybackStatus.Paused) "继续播放" else "播放", fontWeight = FontWeight.Bold) }
                 OutlinedButton(Modifier.weight(1f).height(48.dp), onClick = onPause, shape = RoundedCornerShape(16.dp)) { Text("Ⅱ") }
-                OutlinedButton(Modifier.weight(1f).height(48.dp), onClick = onNext, shape = RoundedCornerShape(16.dp)) { Text("›", MaterialTheme.typography.titleLarge) }
+                OutlinedButton(Modifier.weight(1f).height(48.dp), onClick = onNext, shape = RoundedCornerShape(16.dp)) { Text("›", style = MaterialTheme.typography.titleLarge) }
             }
             Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(Modifier.weight(1f), onClick = onStop, shape = RoundedCornerShape(14.dp)) { Text("停止") }
@@ -204,19 +239,26 @@ private fun Controls(
 
 @Composable
 private fun StationRow(station: Station, selected: Boolean, playing: Boolean, onClick: () -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onClick), RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(if (selected) AccentSoft else Color.White)) {
+    Card(Modifier.fillMaxWidth().clickable(onClick = onClick), RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = if (selected) AccentSoft else Color.White)) {
         Row(Modifier.fillMaxWidth().padding(15.dp), Alignment.CenterVertically, Arrangement.spacedBy(12.dp)) {
             Box(Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(if (selected) Color.White else Color(0xFFF0F3F5)), Alignment.Center) { Text(if (playing) "▶" else "♪", color = if (selected) Accent else Muted, fontWeight = FontWeight.Bold) }
-            Column(Modifier.weight(1f), Arrangement.spacedBy(3.dp)) {
-                Text(station.name, MaterialTheme.typography.titleMedium, Ink, fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(station.url, MaterialTheme.typography.bodySmall, Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(station.name, style = MaterialTheme.typography.titleMedium, color = Ink, fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(station.url, style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            if (selected) Text("当前", MaterialTheme.typography.labelMedium, Accent, fontWeight = FontWeight.ExtraBold)
+            if (selected) Text("当前", style = MaterialTheme.typography.labelMedium, color = Accent, fontWeight = FontWeight.ExtraBold)
         }
     }
 }
 
-private fun PlaybackStatus.displayName(): String = when (this) { PlaybackStatus.Idle -> "待机"; PlaybackStatus.Buffering -> "缓冲"; PlaybackStatus.Playing -> "播放中"; PlaybackStatus.Paused -> "已暂停"; PlaybackStatus.Stopped -> "已停止"; PlaybackStatus.Error -> "失败" }
+private fun PlaybackStatus.displayName(): String = when (this) {
+    PlaybackStatus.Idle -> "待机"
+    PlaybackStatus.Buffering -> "缓冲"
+    PlaybackStatus.Playing -> "播放中"
+    PlaybackStatus.Paused -> "已暂停"
+    PlaybackStatus.Stopped -> "已停止"
+    PlaybackStatus.Error -> "失败"
+}
 
 private fun Long.formatDuration(): String {
     val total = this / 1_000L
