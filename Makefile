@@ -14,24 +14,25 @@ GRADLE_MIRROR_URL := https://mirrors.aliyun.com/gradle/distributions/v$(GRADLE_V
 
 # Build Android APK using Docker with Gradle and Android SDK
 docker:
-	@downloaded=0; \
+	@set -e; \
+	downloaded=0; \
+	cleanup() { \
+		if [ "$$downloaded" = "1" ]; then rm -f "$(GRADLE_ZIP)"; fi; \
+	}; \
+	trap cleanup EXIT INT TERM; \
 	if [ -f "$(GRADLE_ZIP)" ]; then \
 		echo "Using local $(GRADLE_ZIP)"; \
 	else \
 		echo "$(GRADLE_ZIP) not found, downloading from Alibaba Cloud mirror..."; \
-		curl -fL --retry 3 "$(GRADLE_MIRROR_URL)" -o "$(GRADLE_ZIP)" || exit 1; \
+		curl -fL --retry 3 "$(GRADLE_MIRROR_URL)" -o "$(GRADLE_ZIP)"; \
 		downloaded=1; \
 	fi; \
-	docker build -f Dockerfile.android -t terminal-radio-android . || { \
-		if [ "$$downloaded" = "1" ]; then rm -f "$(GRADLE_ZIP)"; fi; \
-		exit 1; \
-	}; \
-	if [ "$$downloaded" = "1" ]; then rm -f "$(GRADLE_ZIP)"; fi
+	docker build -f Dockerfile.android -t terminal-radio-android .; \
 	docker run --rm \
 		--user "$(uid):$(gid)" \
 		-v $(shell pwd):/workspace \
 		terminal-radio-android \
-		./gradlew assembleDebug
+		gradle assembleDebug; \
 	cp $(shell pwd)/android/app/build/outputs/apk/debug/app-debug.apk $(shell pwd)/TerminalRadio-v$(shell grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts).apk
 
 build:
