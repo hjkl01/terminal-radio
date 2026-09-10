@@ -94,8 +94,8 @@ fun RadioScreen(
             }
             item {
                 Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(10.dp)) {
-                    Button(Modifier.weight(1f), onClick = onImportM3u, shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("＋ 导入 M3U") }
-                    OutlinedButton(Modifier.weight(1f), onClick = onRestoreBuiltIn, shape = RoundedCornerShape(14.dp)) { Text("恢复内置") }
+                    Button(onClick = onImportM3u, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("＋ 导入 M3U") }
+                    OutlinedButton(onClick = onRestoreBuiltIn, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("恢复内置") }
                 }
             }
             item {
@@ -136,7 +136,7 @@ private fun BluetoothBanner(connected: Boolean) {
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = if (connected) AccentSoft else Color(0xFFFFF3E0)),
     ) {
-        Row(Modifier.fillMaxWidth().padding(15.dp), Alignment.CenterVertically, Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth().padding(15.dp), Arrangement.spacedBy(12.dp), Alignment.CenterVertically) {
             Text(if (connected) "♫" else "⌁", style = MaterialTheme.typography.titleLarge, color = if (connected) Accent else Color(0xFFB76E00))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(if (connected) "蓝牙音频已连接" else "等待蓝牙音频设备", style = MaterialTheme.typography.titleSmall, color = Ink, fontWeight = FontWeight.Bold)
@@ -224,14 +224,14 @@ private fun Controls(
     Card(Modifier.fillMaxWidth(), RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
-                OutlinedButton(Modifier.weight(1f).height(48.dp), onClick = onPrevious, shape = RoundedCornerShape(16.dp)) { Text("‹", style = MaterialTheme.typography.titleLarge) }
-                Button(Modifier.weight(1.45f).height(48.dp), onClick = onPlay, enabled = bluetoothConnected, shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = Accent)) { Text(if (status == PlaybackStatus.Paused) "继续播放" else "播放", fontWeight = FontWeight.Bold) }
-                OutlinedButton(Modifier.weight(1f).height(48.dp), onClick = onPause, shape = RoundedCornerShape(16.dp)) { Text("Ⅱ") }
-                OutlinedButton(Modifier.weight(1f).height(48.dp), onClick = onNext, shape = RoundedCornerShape(16.dp)) { Text("›", style = MaterialTheme.typography.titleLarge) }
+                OutlinedButton(onClick = onPrevious, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(16.dp)) { Text("‹", style = MaterialTheme.typography.titleLarge) }
+                Button(onClick = onPlay, modifier = Modifier.weight(1.45f).height(48.dp), enabled = bluetoothConnected, shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = Accent)) { Text(if (status == PlaybackStatus.Paused) "继续播放" else "播放", fontWeight = FontWeight.Bold) }
+                OutlinedButton(onClick = onPause, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(16.dp)) { Text("Ⅱ") }
+                OutlinedButton(onClick = onNext, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(16.dp)) { Text("›", style = MaterialTheme.typography.titleLarge) }
             }
             Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(Modifier.weight(1f), onClick = onStop, shape = RoundedCornerShape(14.dp)) { Text("停止") }
-                OutlinedButton(Modifier.weight(1f), onClick = onReconnect, shape = RoundedCornerShape(14.dp)) { Text("重新连接") }
+                OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("停止") }
+                OutlinedButton(onClick = onReconnect, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("重新连接") }
             }
         }
     }
@@ -240,7 +240,7 @@ private fun Controls(
 @Composable
 private fun StationRow(station: Station, selected: Boolean, playing: Boolean, onClick: () -> Unit) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onClick), RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = if (selected) AccentSoft else Color.White)) {
-        Row(Modifier.fillMaxWidth().padding(15.dp), Alignment.CenterVertically, Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth().padding(15.dp), Arrangement.spacedBy(12.dp), Alignment.CenterVertically) {
             Box(Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(if (selected) Color.White else Color(0xFFF0F3F5)), Alignment.Center) { Text(if (playing) "▶" else "♪", color = if (selected) Accent else Muted, fontWeight = FontWeight.Bold) }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(station.name, style = MaterialTheme.typography.titleMedium, color = Ink, fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
