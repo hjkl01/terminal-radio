@@ -5,6 +5,10 @@ ARG GRADLE_VERSION=8.2
 ARG ANDROID_SDK_URL=https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
 ARG ANDROID_BUILD_TOOLS_VERSION=33.0.0
 ARG ANDROID_PLATFORM_VERSION=34
+# Default to the official Gradle distribution. The Alibaba Cloud mirror is used
+# as the fallback for builds in mainland China.
+ARG GRADLE_DOWNLOAD_URL=https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip
+ARG GRADLE_MIRROR_URL=https://mirrors.aliyun.com/gradle/distributions/v${GRADLE_VERSION}.0/gradle-${GRADLE_VERSION}-bin.zip
 
 ENV ANDROID_HOME=/opt/android-sdk
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
@@ -12,26 +16,38 @@ ENV GRADLE_HOME=/opt/gradle/gradle-${GRADLE_VERSION}
 ENV PATH=/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:${GRADLE_HOME}/bin:${PATH}
 
 # Install the Android command-line tools, Android SDK and the exact Gradle
-# version required by the project. The host does not need Gradle installed.
-RUN apt-get update && \
+# version required by the project. If gradle-${GRADLE_VERSION}-bin.zip is
+# already present in the Docker build context, reuse it instead of downloading.
+# Otherwise try the official Gradle distribution first, then the Alibaba Cloud
+# mirror. BuildKit is used only to inspect the build context without copying the
+# whole repository into the image.
+RUN --mount=type=bind,source=.,target=/build-context,readonly \
+    apt-get update && \
     apt-get install -y --no-install-recommends curl unzip ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /opt/android-sdk/cmdline-tools /tmp/android-sdk && \
+    mkdir -p /opt/android-sdk/cmdline-tools /tmp/android-sdk /opt/gradle && \
     curl -fsSL "${ANDROID_SDK_URL}" -o /tmp/android-sdk/cmdline-tools.zip && \
     unzip -q /tmp/android-sdk/cmdline-tools.zip -d /tmp/android-sdk && \
     mv /tmp/android-sdk/cmdline-tools /opt/android-sdk/cmdline-tools/latest && \
     rm -rf /tmp/android-sdk && \
     yes | sdkmanager --licenses >/dev/null 2>&1 || true && \
     sdkmanager "platform-tools" "platforms;android-${ANDROID_PLATFORM_VERSION}" "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" && \
-    mkdir -p /opt/gradle && \
-    curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip && \
+    if [ -f "/build-context/gradle-${GRADLE_VERSION}-bin.zip" ]; then \
+        echo "Using local Gradle distribution: gradle-${GRADLE_VERSION}-bin.zip"; \
+        cp "/build-context/gradle-${GRADLE_VERSION}-bin.zip" /tmp/gradle.zip; \
+    else \
+        echo "Local Gradle distribution not found; downloading..."; \
+        curl -fL --retry 3 "${GRADLE_DOWNLOAD_URL}" -o /tmp/gradle.zip || \
+        curl -fL --retry 3 "${GRADLE_MIRROR_URL}" -o /tmp/gradle.zip; \
+    fi && \
     unzip -q /tmp/gradle.zip -d /opt/gradle && \
     rm -f /tmp/gradle.zip
 
 WORKDIR /workspace/android
 
-# The project Gradle wrapper is kept as the source of truth. If its required
-# distribution is not cached, Gradle Wrapper will download it automatically.
+# The project Gradle wrapper is kept as the source of truth. The distribution
+# URL remains the official Gradle URL; Docker pre-installs the exact Gradle
+# version above so the wrapper can use the installed Gradle directly.
 COPY android/gradle/ /workspace/android/gradle/
 COPY android/gradlew /workspace/android/gradlew
 COPY android/gradle.properties /workspace/android/gradle.properties
@@ -39,4 +55,4 @@ COPY android/build.gradle.kts /workspace/android/build.gradle.kts
 COPY android/settings.gradle.kts /workspace/android/settings.gradle.kts
 COPY android/app/ /workspace/android/app/
 
-RUN chmod +x gradlew && ./gradlew --version
+RUN chmod +x gradlew && gradle --version && ./gradlew --version
