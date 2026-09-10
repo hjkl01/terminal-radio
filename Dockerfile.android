@@ -34,11 +34,12 @@ RUN apt-get update && \
 
 WORKDIR /workspace/android
 
-COPY android/gradle/ /workspace/android/gradle/
-COPY android/gradlew /workspace/android/gradlew
 COPY android/gradle.properties /workspace/android/gradle.properties
 COPY android/build.gradle.kts /workspace/android/build.gradle.kts
 COPY android/settings.gradle.kts /workspace/android/settings.gradle.kts
 COPY android/app/ /workspace/android/app/
 
-RUN chmod +x gradlew && gradle --version && ./gradlew --version
+# Use the Gradle installation already included in this image. Do not invoke
+# ./gradlew here: Gradle Wrapper would read distributionUrl and try to download
+# another Gradle ZIP even though Gradle 8.2 is already installed.
+RUN gradle --version
