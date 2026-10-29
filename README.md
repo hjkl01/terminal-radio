@@ -110,6 +110,11 @@ make docker
 
 `Dockerfile.android` 会自动准备 JDK 17、Android SDK Command-line Tools、Android Platform 34、Build Tools 33.0.0 和 Gradle 8.2。因此宿主机完全没有 Gradle 也可以直接构建。
 
+注意：
+
+- Docker 运行时需要至少 4GiB 内存，否则 Gradle 守护进程会被 OOM 杀掉，报错 `Gradle build daemon disappeared unexpectedly`。Colima 用户可用 `colima stop && colima start --memory 6 --cpu 4` 调整。
+- Google 只提供 x86_64 版本的 Android SDK 工具（aapt2、zipalign 等）。在 Apple Silicon / arm64 机器上，Dockerfile 会额外安装 x86_64 的 glibc 运行库，让这些工具通过 qemu-user 模拟运行，避免 `qemu-x86_64: Could not open '/lib64/ld-linux-x86-64.so.2'` 报错，同时 JDK/Gradle 仍以原生 arm64 运行。
+
 构建完成后，APK 会复制到项目根目录：
 
 ```text

@@ -16,6 +16,28 @@ ENV PATH=/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-too
 # installations where BuildKit is disabled and avoids any Gradle download here.
 COPY gradle-${GRADLE_VERSION}-bin.zip /tmp/gradle.zip
 
+# Google only ships x86_64 Linux binaries for the Android SDK tools (aapt2,
+# zipalign, aapt, ...). On arm64 hosts those binaries are executed through the
+# qemu-user binfmt emulation that Docker/Colima installs, but the base image has
+# no x86_64 runtime at all, which makes them fail with:
+#
+#   qemu-x86_64: Could not open '/lib64/ld-linux-x86-64.so.2'
+#
+# Installing the cross packages and exposing them at the paths the x86_64
+# loader expects keeps the JVM/Gradle native to the host architecture while
+# still letting the SDK tools run (emulated).
+RUN if [ "$(uname -m)" != "x86_64" ]; then \
+        apt-get update && \
+        apt-get install -y --no-install-recommends \
+            libc6-amd64-cross libgcc-s1-amd64-cross libstdc++6-amd64-cross && \
+        rm -rf /var/lib/apt/lists/* && \
+        mkdir -p /lib64 /lib/x86_64-linux-gnu && \
+        ln -sf /usr/x86_64-linux-gnu/lib/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2 && \
+        for lib in /usr/x86_64-linux-gnu/lib/*.so*; do \
+            ln -sfn "$lib" "/lib/x86_64-linux-gnu/$(basename "$lib")"; \
+        done; \
+    fi
+
 # Install the Android command-line tools, Android SDK and the exact Gradle
 # version required by the project. Gradle itself is always supplied by the
 # local ZIP prepared by the Makefile.
