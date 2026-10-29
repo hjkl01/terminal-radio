@@ -35,6 +35,8 @@ class RadioPlayerManager(
         const val BUILT_IN_SOURCE = "内置列表"
         const val CUSTOM_SOURCE = "自定义列表"
         const val DEFAULT_STATION_NAME = "音乐之声"
+        const val EXTERNAL_MEDIA_POLL_MS = 2_000L
+        const val EXTERNAL_MEDIA_MESSAGE = "检测到其他音视频正在播放，已暂停，结束后自动恢复"
     }
 
     val player: ExoPlayer = ExoPlayer.Builder(context).build().apply {
@@ -58,6 +60,7 @@ class RadioPlayerManager(
     private var userPaused = false
     private var userStopped = false
     private var wasPlayingBeforeFocusLoss = false
+    private var pausedByExternalMedia = false
     private var reconnectJob: Job? = null
     private var focusRecoveryJob: Job? = null
     private var watchdogJob: Job? = null
@@ -123,12 +126,20 @@ class RadioPlayerManager(
             return
         }
         val defaultStation = station ?: selectDefaultStation().also { station = it }
+        // 其他 App 正在播放音视频时先等待，避免抢占声音。
+        if (shouldWaitForExternalAudio()) {
+            this.station = defaultStation
+            publishSourceState()
+            pauseForExternalMedia(resumeAfter = true)
+            return
+        }
         playStation(defaultStation)
     }
 
     fun play() {
         userPaused = false
         userStopped = false
+        clearExternalPause()
         if (!hasBluetoothAudioOutput()) {
             publishBluetoothState(false, "请先连接蓝牙耳机或蓝牙音箱")
             return
@@ -145,7 +156,11 @@ class RadioPlayerManager(
     }
 
     fun pause(userInitiated: Boolean = true) {
-        if (userInitiated) userPaused = true
+        if (userInitiated) {
+            userPaused = true
+            wasPlayingBeforeFocusLoss = false
+            clearExternalPause()
+        }
         player.pause()
         publishPlayerState(PlaybackStatus.Paused)
     }
@@ -153,6 +168,8 @@ class RadioPlayerManager(
     fun stop() {
         userStopped = true
         userPaused = false
+        wasPlayingBeforeFocusLoss = false
+        clearExternalPause()
         reconnectJob?.cancel()
         player.stop()
         publishPlayerState(PlaybackStatus.Stopped)
@@ -226,6 +243,7 @@ class RadioPlayerManager(
 
     private fun playStation(station: Station) {
         this.station = station
+        clearExternalPause()
         if (station.url.isBlank()) {
             _state.value = _state.value.copy(
                 status = PlaybackStatus.Error,
@@ -316,11 +334,11 @@ class RadioPlayerManager(
     }
 
     private fun scheduleReconnect(delayMs: Long) {
-        if (userPaused || userStopped || !hasBluetoothAudioOutput()) return
+        if (userPaused || userStopped || pausedByExternalMedia || !hasBluetoothAudioOutput()) return
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             delay(delayMs)
-            if (!userPaused && !userStopped && hasBluetoothAudioOutput()) reconnect()
+            if (!userPaused && !userStopped && !pausedByExternalMedia && hasBluetoothAudioOutput()) reconnect()
         }
     }
 
@@ -329,7 +347,9 @@ class RadioPlayerManager(
         watchdogJob = scope.launch {
             while (isActive) {
                 delay(30_000L)
-                if (hasBluetoothAudioOutput() && !player.isPlaying && !userPaused && !userStopped) resumeCurrentStation()
+                if (hasBluetoothAudioOutput() && !player.isPlaying && !userPaused && !userStopped && !pausedByExternalMedia) {
+                    resumeCurrentStation()
+                }
             }
         }
     }
@@ -349,7 +369,7 @@ class RadioPlayerManager(
         networkJob = scope.launch {
             networkMonitor.isOnline.collect { isOnline ->
                 _state.value = _state.value.copy(isNetworkAvailable = isOnline)
-                if (isOnline && hasBluetoothAudioOutput() && !userPaused && !userStopped && station != null && !player.isPlaying) {
+                if (isOnline && hasBluetoothAudioOutput() && !userPaused && !userStopped && !pausedByExternalMedia && station != null && !player.isPlaying) {
                     resumeCurrentStation()
                 }
             }
@@ -416,23 +436,95 @@ class RadioPlayerManager(
 
     private fun handleAudioFocusChange(focusChange: Int) {
         when (focusChange) {
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                wasPlayingBeforeFocusLoss = player.isPlaying
-                pause(userInitiated = false)
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // 检测到其他 App 开始播放音视频：立即暂停，等对方结束后再恢复。
+                player.volume = 1f
+                pauseForExternalMedia()
             }
-            AudioManager.AUDIOFOCUS_LOSS -> {
-                wasPlayingBeforeFocusLoss = player.isPlaying
-                focusRecoveryJob?.cancel()
-                player.pause()
-                publishPlayerState(PlaybackStatus.Paused)
-            }
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> player.volume = 0.4f
             AudioManager.AUDIOFOCUS_GAIN -> {
                 player.volume = 1f
-                focusRecoveryJob?.cancel()
-                if (wasPlayingBeforeFocusLoss && !userPaused && !userStopped && hasBluetoothAudioOutput()) play()
+                if (pausedByExternalMedia) {
+                    tryResumeFromExternalPause()
+                } else if (wasPlayingBeforeFocusLoss && !userPaused && !userStopped && hasBluetoothAudioOutput()) {
+                    play()
+                }
             }
         }
+    }
+
+    /**
+     * 暂停播放并等待其他音视频结束。
+     * [resumeAfter] 表示当前电台是否本来就处于活跃状态，只有这种情况才需要自动恢复。
+     */
+    private fun pauseForExternalMedia(resumeAfter: Boolean = player.isPlaying || player.playWhenReady) {
+        if (userPaused || userStopped || !resumeAfter) return
+        wasPlayingBeforeFocusLoss = true
+        pausedByExternalMedia = true
+        reconnectJob?.cancel()
+        player.pause()
+        _state.value = _state.value.copy(
+            status = PlaybackStatus.Paused,
+            errorMessage = EXTERNAL_MEDIA_MESSAGE,
+        )
+        startExternalMediaRecovery()
+    }
+
+    private fun startExternalMediaRecovery() {
+        if (focusRecoveryJob?.isActive == true) return
+        focusRecoveryJob = scope.launch {
+            while (isActive) {
+                delay(EXTERNAL_MEDIA_POLL_MS)
+                if (!pausedByExternalMedia) break
+                if (shouldWaitForExternalAudio()) continue
+                if (tryResumeFromExternalPause()) break
+            }
+            focusRecoveryJob = null
+        }
+    }
+
+    /**
+     * 其他音视频已结束，尝试恢复播放。
+     * @return true 表示已经处理好（恢复或彻底放弃），不需要继续轮询。
+     */
+    private fun tryResumeFromExternalPause(): Boolean {
+        if (!pausedByExternalMedia) return true
+        if (userPaused || userStopped) {
+            clearExternalPause()
+            return true
+        }
+        if (!hasBluetoothAudioOutput()) return false
+        if (shouldWaitForExternalAudio()) return false
+        val resumePlayback = wasPlayingBeforeFocusLoss
+        clearExternalPause()
+        if (resumePlayback) {
+            resumeCurrentStation()
+        } else {
+            publishPlayerState(PlaybackStatus.Paused)
+        }
+        return true
+    }
+
+    private fun clearExternalPause() {
+        focusRecoveryJob?.cancel()
+        focusRecoveryJob = null
+        if (!pausedByExternalMedia) return
+        pausedByExternalMedia = false
+        wasPlayingBeforeFocusLoss = false
+        _state.value = _state.value.copy(errorMessage = null)
+    }
+
+    private fun shouldWaitForExternalAudio(): Boolean = hasOtherMediaPlaying() || isAudioModeBusy()
+
+    private fun isAudioModeBusy(): Boolean = runCatching {
+        audioManager.mode != AudioManager.MODE_NORMAL
+    }.getOrDefault(false)
+
+    /** 是否还有其他 App 正在播放音乐 / 视频 / 导航语音等。 */
+    private fun hasOtherMediaPlaying(): Boolean {
+        @Suppress("DEPRECATION")
+        return runCatching { audioManager.isMusicActive }.getOrDefault(false)
     }
 
     private fun resumeCurrentStation() {
@@ -449,6 +541,7 @@ class RadioPlayerManager(
             if (!requestAudioFocus()) return@runCatching
             player.prepare()
             player.play()
+            _state.value = _state.value.copy(errorMessage = null)
             publishPlayerState()
         }.onFailure { error ->
             _state.value = _state.value.copy(
