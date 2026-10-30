@@ -37,6 +37,7 @@ class RadioPlayerManager(
         const val DEFAULT_STATION_NAME = "音乐之声"
         const val EXTERNAL_MEDIA_POLL_MS = 2_000L
         const val EXTERNAL_MEDIA_MESSAGE = "检测到其他音视频正在播放，已暂停，结束后自动恢复"
+        const val NO_BLUETOOTH_MESSAGE = "未连接蓝牙设备，点击播放可使用手机扬声器"
     }
 
     val player: ExoPlayer = ExoPlayer.Builder(context).build().apply {
@@ -69,6 +70,8 @@ class RadioPlayerManager(
     private var bluetoothRouteJob: Job? = null
     private var noisyReceiverRegistered = false
     private var bluetoothAudioConnected: Boolean? = null
+    /** 用户是否主动点了播放：为 true 时允许在没有蓝牙设备的情况下用手机扬声器播放。 */
+    private var speakerPlaybackRequested = false
 
     private val audioFocusRequest: AudioFocusRequest? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
@@ -118,11 +121,14 @@ class RadioPlayerManager(
     }
 
     fun autoPlay() {
+        // 已经在播放时不做任何处理，避免覆盖用户主动发起的扬声器播放。
+        if (player.isPlaying) return
         userPaused = false
         userStopped = false
         ensureStationsLoaded()
+        // 自动播放只在有蓝牙音频输出时进行，避免一启动就外放。
         if (!hasBluetoothAudioOutput()) {
-            publishBluetoothState(false, "未连接蓝牙音频设备，不会使用手机扬声器播放")
+            publishBluetoothState(false, NO_BLUETOOTH_MESSAGE)
             return
         }
         val defaultStation = station ?: selectDefaultStation().also { station = it }
@@ -139,13 +145,11 @@ class RadioPlayerManager(
     fun play() {
         userPaused = false
         userStopped = false
+        markUserPlayIntent()
         clearExternalPause()
-        if (!hasBluetoothAudioOutput()) {
-            publishBluetoothState(false, "请先连接蓝牙耳机或蓝牙音箱")
-            return
-        }
         if (station == null || player.mediaItemCount == 0) {
-            autoPlay()
+            val target = station ?: selectDefaultStation().also { station = it }
+            playStation(target)
             return
         }
         if (requestAudioFocus()) {
@@ -158,6 +162,7 @@ class RadioPlayerManager(
     fun pause(userInitiated: Boolean = true) {
         if (userInitiated) {
             userPaused = true
+            speakerPlaybackRequested = false
             wasPlayingBeforeFocusLoss = false
             clearExternalPause()
         }
@@ -168,6 +173,7 @@ class RadioPlayerManager(
     fun stop() {
         userStopped = true
         userPaused = false
+        speakerPlaybackRequested = false
         wasPlayingBeforeFocusLoss = false
         clearExternalPause()
         reconnectJob?.cancel()
@@ -179,11 +185,8 @@ class RadioPlayerManager(
         userPaused = false
         userStopped = false
         reconnectJob?.cancel()
+        markUserPlayIntent()
         ensureStationsLoaded()
-        if (!hasBluetoothAudioOutput()) {
-            publishBluetoothState(false, "请先连接蓝牙耳机或蓝牙音箱")
-            return
-        }
         val currentStation = station ?: selectDefaultStation().also { station = it }
         playStation(currentStation)
     }
@@ -194,6 +197,7 @@ class RadioPlayerManager(
         userPaused = false
         userStopped = false
         reconnectJob?.cancel()
+        markUserPlayIntent()
         playStation(selectedStation)
     }
 
@@ -214,6 +218,7 @@ class RadioPlayerManager(
         sourceName = CUSTOM_SOURCE
         userPaused = false
         userStopped = false
+        markUserPlayIntent()
         val selectedStation = parsedStations.firstOrNull { it.name == DEFAULT_STATION_NAME } ?: parsedStations.first()
         playStation(selectedStation)
     }
@@ -224,6 +229,7 @@ class RadioPlayerManager(
         sourceName = BUILT_IN_SOURCE
         userPaused = false
         userStopped = false
+        markUserPlayIntent()
         val selectedStation = selectDefaultStation()
         playStation(selectedStation)
     }
@@ -256,8 +262,8 @@ class RadioPlayerManager(
             )
             return
         }
-        if (!hasBluetoothAudioOutput()) {
-            publishBluetoothState(false, "未连接蓝牙音频设备，不会使用手机扬声器播放")
+        if (!canPlayNow()) {
+            publishBluetoothState(false, NO_BLUETOOTH_MESSAGE)
             return
         }
         if (!requestAudioFocus()) return
@@ -275,7 +281,7 @@ class RadioPlayerManager(
             stations = stations,
             selectedStationUrl = station.url,
             sourceName = sourceName,
-            isBluetoothConnected = true,
+            isBluetoothConnected = hasBluetoothAudioOutput(),
             errorMessage = null,
         )
     }
@@ -316,6 +322,7 @@ class RadioPlayerManager(
         userPaused = false
         userStopped = false
         reconnectJob?.cancel()
+        markUserPlayIntent()
         playStation(stations[nextIndex])
     }
 
@@ -334,11 +341,11 @@ class RadioPlayerManager(
     }
 
     private fun scheduleReconnect(delayMs: Long) {
-        if (userPaused || userStopped || pausedByExternalMedia || !hasBluetoothAudioOutput()) return
+        if (userPaused || userStopped || pausedByExternalMedia || !canPlayNow()) return
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             delay(delayMs)
-            if (!userPaused && !userStopped && !pausedByExternalMedia && hasBluetoothAudioOutput()) reconnect()
+            if (!userPaused && !userStopped && !pausedByExternalMedia && canPlayNow()) resumeCurrentStation()
         }
     }
 
@@ -347,7 +354,7 @@ class RadioPlayerManager(
         watchdogJob = scope.launch {
             while (isActive) {
                 delay(30_000L)
-                if (hasBluetoothAudioOutput() && !player.isPlaying && !userPaused && !userStopped && !pausedByExternalMedia) {
+                if (canPlayNow() && !player.isPlaying && !userPaused && !userStopped && !pausedByExternalMedia) {
                     resumeCurrentStation()
                 }
             }
@@ -369,7 +376,7 @@ class RadioPlayerManager(
         networkJob = scope.launch {
             networkMonitor.isOnline.collect { isOnline ->
                 _state.value = _state.value.copy(isNetworkAvailable = isOnline)
-                if (isOnline && hasBluetoothAudioOutput() && !userPaused && !userStopped && !pausedByExternalMedia && station != null && !player.isPlaying) {
+                if (isOnline && canPlayNow() && !userPaused && !userStopped && !pausedByExternalMedia && station != null && !player.isPlaying) {
                     resumeCurrentStation()
                 }
             }
@@ -396,19 +403,37 @@ class RadioPlayerManager(
         if (previous == connected) return
 
         if (connected) {
-            // 蓝牙音频设备刚连接：自动开始播放当前电台。
+            // 蓝牙音频设备刚连接：优先使用蓝牙路由，自动开始播放当前电台。
+            speakerPlaybackRequested = false
             if (!userStopped) {
                 userPaused = false
                 autoPlay()
             }
+        } else if (speakerPlaybackRequested) {
+            // 用户已主动选择手机扬声器播放，蓝牙断开不影响当前播放。
+            _state.value = _state.value.copy(
+                isBluetoothConnected = false,
+                errorMessage = "蓝牙已断开，继续使用手机扬声器播放",
+            )
         } else {
             // 蓝牙音频断开：立即暂停，避免声音从手机扬声器继续播放。
             reconnectJob?.cancel()
             player.pause()
             abandonAudioFocus()
-            publishBluetoothState(false, "蓝牙已断开，已暂停播放")
+            publishBluetoothState(false, "蓝牙已断开，已暂停播放，点击播放可继续")
         }
     }
+
+    /**
+     * 用户主动触发播放（播放 / 换台 / 重连 / 导入列表）时调用。
+     * 之后即使没有蓝牙设备，也允许通过手机扬声器播放，直到用户暂停或停止。
+     */
+    private fun markUserPlayIntent() {
+        speakerPlaybackRequested = true
+    }
+
+    /** 当前是否允许开始播放：有蓝牙输出，或用户主动要求用手机扬声器播放。 */
+    private fun canPlayNow(): Boolean = hasBluetoothAudioOutput() || speakerPlaybackRequested
 
     private fun hasBluetoothAudioOutput(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
@@ -447,8 +472,8 @@ class RadioPlayerManager(
                 player.volume = 1f
                 if (pausedByExternalMedia) {
                     tryResumeFromExternalPause()
-                } else if (wasPlayingBeforeFocusLoss && !userPaused && !userStopped && hasBluetoothAudioOutput()) {
-                    play()
+                } else if (wasPlayingBeforeFocusLoss && !userPaused && !userStopped && canPlayNow()) {
+                    resumeCurrentStation()
                 }
             }
         }
@@ -494,7 +519,7 @@ class RadioPlayerManager(
             clearExternalPause()
             return true
         }
-        if (!hasBluetoothAudioOutput()) return false
+        if (!canPlayNow()) return false
         if (shouldWaitForExternalAudio()) return false
         val resumePlayback = wasPlayingBeforeFocusLoss
         clearExternalPause()
@@ -528,8 +553,8 @@ class RadioPlayerManager(
     }
 
     private fun resumeCurrentStation() {
-        if (!hasBluetoothAudioOutput()) {
-            publishBluetoothState(false, "未连接蓝牙音频设备，不会使用手机扬声器播放")
+        if (!canPlayNow()) {
+            publishBluetoothState(false, NO_BLUETOOTH_MESSAGE)
             return
         }
         val currentStation = station

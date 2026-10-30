@@ -42,7 +42,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -116,7 +115,6 @@ fun RadioScreen(
             item { NowPlayingCard(state) }
             item {
                 TransportControls(
-                    enabled = state.isBluetoothConnected,
                     status = state.status,
                     onPrevious = onPrevious,
                     onPlay = onPlay,
@@ -173,7 +171,7 @@ private fun ScreenHeader(bluetoothConnected: Boolean) {
             Text("车载电台 · 蓝牙优先", style = MaterialTheme.typography.bodySmall, color = TextMuted)
         }
         StatusPill(
-            text = if (bluetoothConnected) "蓝牙已连接" else "等待蓝牙",
+            text = if (bluetoothConnected) "蓝牙已连接" else "未连蓝牙",
             color = if (bluetoothConnected) Accent else Warm,
         )
     }
@@ -329,7 +327,6 @@ private fun EqualizerBars(
 
 @Composable
 private fun TransportControls(
-    enabled: Boolean,
     status: PlaybackStatus,
     onPrevious: () -> Unit,
     onPlay: () -> Unit,
@@ -358,7 +355,6 @@ private fun TransportControls(
             }
             PrimaryPlayButton(
                 playing = playing,
-                enabled = enabled,
                 onClick = { if (playing) onPause() else onPlay() },
             )
             CircleIconButton(onClick = onNext, label = "下一台") {
@@ -385,21 +381,20 @@ private fun TransportControls(
 }
 
 @Composable
-private fun PrimaryPlayButton(playing: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun PrimaryPlayButton(playing: Boolean, onClick: () -> Unit) {
     Box(contentAlignment = Alignment.Center) {
         Box(
             Modifier
                 .size(84.dp)
                 .clip(CircleShape)
-                .background(if (enabled) Brush.linearGradient(listOf(Accent.copy(alpha = 0.28f), Color.Transparent)) else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))),
+                .background(Brush.linearGradient(listOf(Accent.copy(alpha = 0.28f), Color.Transparent))),
         )
         Box(
             Modifier
                 .size(70.dp)
-                .alpha(if (enabled) 1f else 0.4f)
                 .clip(CircleShape)
                 .background(Brush.linearGradient(listOf(Accent, AccentDeep)))
-                .clickable(enabled = enabled, onClick = onClick),
+                .clickable(onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
             PlayPauseGlyph(
@@ -480,6 +475,9 @@ private fun StationListEntry(state: PlaybackUiState, onOpen: () -> Unit) {
 
 @Composable
 private fun ScreenFooter(state: PlaybackUiState) {
+    val active = state.status == PlaybackStatus.Playing || state.status == PlaybackStatus.Buffering
+    val speakerPlayback = !state.isBluetoothConnected && active
+
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -492,7 +490,11 @@ private fun ScreenFooter(state: PlaybackUiState) {
                 .background(if (state.isBluetoothConnected) Accent else Warm),
         )
         Text(
-            text = if (state.isBluetoothConnected) "蓝牙音频已连接，正在车机播放就绪状态" else "未连接蓝牙音频时不会通过手机扬声器播放",
+            text = when {
+                state.isBluetoothConnected -> "蓝牙音频已连接，正在车机播放就绪状态"
+                speakerPlayback -> "未连接蓝牙，正在使用手机扬声器播放"
+                else -> "未连接蓝牙音频，蓝牙断开会自动暂停，点击播放则使用手机扬声器"
+            },
             style = MaterialTheme.typography.bodySmall,
             color = TextMuted,
             modifier = Modifier.weight(1f),
